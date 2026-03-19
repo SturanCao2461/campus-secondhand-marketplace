@@ -45,9 +45,6 @@ public class Listing {
     @JoinColumn(name = "seller_id", nullable = false)
     private User seller;
 
-    @Column(name = "seller_id", insertable = false, updatable = false)
-    private Long sellerId;
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ListingStatus status = ListingStatus.ACTIVE;
