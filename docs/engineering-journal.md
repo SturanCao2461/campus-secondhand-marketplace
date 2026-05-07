@@ -186,6 +186,29 @@ These are deliberate design choices, not bugs. Each decision shaped the codebase
 
 ---
 
+### D-9 — Pass IP into the service layer rather than reading it inside
+
+**Date / where** Task 7 — `AuthService.register(rawEmail, password, nickname, ip)`
+**Choice** The caller (controller) extracts the client IP from the HTTP request and passes it to the service as a plain `String` argument.
+**Alternatives considered** Inject `HttpServletRequest` into the service and read `getRemoteAddr()` there.
+**Rationale** The service has no other reason to know about HTTP. Pushing IP extraction into the controller keeps the service unit-testable without a mock servlet request — see how `AuthServiceRegisterTest` constructs the service with plain strings and zero web-layer dependencies.
+
+> 💡 中文要点：IP 由 Controller 抽出来传给 Service，Service 不感知 HTTP。这样测试不用 mock Servlet 对象，直接传字符串。
+
+---
+
+### D-10 — Validate input inside the service, not only with `@Valid` on DTOs
+
+**Date / where** Task 7 — `validateEmail / validatePassword / validateNickname` in `AuthService`
+**Choice** The service runs its own validation (regex for email domain, length checks, etc.) even though Bean Validation annotations on the request DTO will also fire.
+**Alternatives considered** Validate only at the DTO boundary.
+**Rationale** Two reasons. First, the service might be called from places other than the HTTP controller (a CLI seeder, a test fixture, an internal job) — the DTO validator would not run there. Second, the rules ("email must end with `@students.waikato.ac.nz`", "password must contain a digit") are *business* rules, not data-format rules; they belong in the layer that owns the business logic.
+**Trade-offs accepted** Minor duplication between DTO annotations (Task 13) and service checks. Worth it for defence-in-depth.
+
+> 💡 中文要点：业务校验放在 Service 里（不只放在 DTO 注解上），因为 Service 可能被非 HTTP 入口调用，且业务规则本来就属于 Service 层。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -277,4 +300,10 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 6 completion. Next entry: Task 7 — AuthService registration.*
+- **Mockito for unit tests, Testcontainers for integration tests** — `AuthServiceRegisterTest` mocks `UserRepository` and `RateLimitService` because the goal is to test *the logic in `AuthService`*, not the database. The encoder is the *real* `BCryptPasswordEncoder` because asserting "the saved password is bcrypt-encoded" requires a real encoder. Picking what to mock is itself a skill: mock collaborators whose behaviour you don't want to depend on; use the real thing when the assertion is *about* its behaviour.
+
+> 💡 中文要点：Mock 还是用真的 —— 要看断言到底在测什么。`AuthServiceRegisterTest` mock 掉 Repository 和限流器（因为不关心数据库），但用**真的** BCryptPasswordEncoder（因为要断言密码确实被 bcrypt 哈希过）。
+
+---
+
+*Last updated: 2026-05-08 after Task 7 completion. Next entry: Task 8 — AuthService login + logout.*
