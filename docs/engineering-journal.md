@@ -209,6 +209,44 @@ These are deliberate design choices, not bugs. Each decision shaped the codebase
 
 ---
 
+### D-11 — Identical error message for "unknown email" and "wrong password"
+
+**Date / where** Task 8 — `AuthService.login`
+**Choice** Both branches throw `ApiException(BAD_CREDENTIALS, "Email or password is incorrect.")`.
+**Alternatives considered** Tell the user specifically which field is wrong.
+**Rationale** Distinct messages let an attacker enumerate which emails are registered (by observing whether the response says "wrong password" or "no such user"). One generic message keeps account existence private.
+**Trade-offs accepted** Slightly less helpful UX for a legitimate user who typoed their email — they don't get told to check spelling.
+
+> 💡 中文要点：邮箱不存在 vs 密码错误，返回**同一句话**。否则攻击者可以靠错误信息枚举哪些邮箱已注册。
+
+---
+
+### D-12 — Setter-injected `StringRedisTemplate` (instead of constructor-injected)
+
+**Date / where** Task 8 — `AuthService.setRedis(...)` annotated `@Autowired(required = false)`
+**Choice** Redis is injected via a setter, optional, rather than added to the constructor.
+**Alternatives considered** Add `StringRedisTemplate` as a 7th constructor argument (alongside `users`, `encoder`, `rateLimit`, `jwt`, `email`, `emailBaseUrl`).
+**Rationale** Two reasons. First, `register()` (Task 7) does not need Redis at all — making it constructor-mandatory would force every `AuthService` test (including the seven register tests) to mock Redis even when irrelevant. Second, with `required = false`, unit tests can construct the service with `null` redis and the `logout`/`isBlacklisted` methods short-circuit safely. In production, Spring auto-wires the bean.
+**Trade-offs accepted** Setter injection is generally less preferred than constructor injection (mutability, less obvious dependencies). Here the trade-off favors test ergonomics for an optional collaborator.
+
+> 💡 中文要点：Redis 用 setter 注入而不是构造函数，因为 `register` 用不上它。这样老的 register 测试不用 mock Redis；生产环境 Spring 仍会自动注入。
+
+---
+
+### D-13 — JWT logout via Redis blacklist with TTL = remaining token life
+
+**Date / where** Task 8 — `AuthService.logout`
+**Choice** On logout, write `jwt:blacklist:<jti>` to Redis with TTL equal to the token's remaining lifetime (computed at logout time). Future requests check this key.
+**Alternatives considered**
+- Maintain a server-side session and invalidate it (defeats the point of stateless JWT).
+- Issue a new short-lived "access token" + long-lived "refresh token", revoke refresh on logout (more moving parts than the MVP needs).
+**Rationale** The `jti` (JWT ID) claim makes each token uniquely identifiable. A Redis key with TTL set to the *remaining* lifetime self-cleans — no janitor job needed; once the token would have expired anyway, the blacklist entry vanishes, keeping Redis small.
+**Trade-offs accepted** Logout requires Redis to be available. If Redis is down, logout silently no-ops (the early-return on `redis == null`). Acceptable because the token will still expire on its own.
+
+> 💡 中文要点：登出 = 把 token 的 `jti` 写进 Redis 黑名单，TTL 等于这个 token 还能活多久。token 过期前黑名单也跟着过期，自动清理。Redis 挂了登出会失败，但 token 反正会过期。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -306,4 +344,20 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 7 completion. Next entry: Task 8 — AuthService login + logout.*
+- **Mocking nested fluent APIs** — `redis.opsForValue().set(...)` is two calls. Mockito needs to be told that `redis.opsForValue()` returns a *mocked* `ValueOperations`, not null:
+  ```java
+  redis = mock(StringRedisTemplate.class);
+  valueOps = mock(ValueOperations.class);
+  when(redis.opsForValue()).thenReturn(valueOps);
+  ```
+  Forgetting the second mock makes the first call return `null` and the test fails with a `NullPointerException` that *looks* like a bug in the production code but is actually a mock setup gap. Mental model: every fluent step in a chain that you want to assert on needs its own mock.
+
+> 💡 中文要点：Mock 链式调用（`redis.opsForValue().set(...)`）时，**每一节都要 mock**。少 mock 一节就报 NPE，会误以为是业务代码的 bug，其实是测试搭建漏了。
+
+- **Stateless logout is not really "destroying" a token** — A JWT cannot be destroyed; it stays valid until expiry. "Logout" in this system means *we'll refuse to trust this token anymore* (blacklist by `jti`). Understanding this changed how I think about session lifecycles in stateless systems.
+
+> 💡 中文要点：无状态 JWT 没法真"销毁"，只能在服务端记一笔"以后别信这个 jti"。"登出"在这种系统里是个**约定**，不是真把 token 抹掉。
+
+---
+
+*Last updated: 2026-05-08 after Task 8 completion. Next entry: Task 9 — AuthService.getCurrentUser.*
