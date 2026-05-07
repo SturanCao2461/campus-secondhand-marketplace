@@ -472,6 +472,30 @@ Combined, these make the classic CSRF attack vector fail before it reaches our b
 
 ---
 
+### D-28 — Vite dev proxy `/api` → `localhost:8080` (instead of CORS in dev)
+
+**Date / where** Task 15 — `frontend/vite.config.ts`
+**Choice** Configure Vite's dev server to proxy any request starting with `/api` to `http://localhost:8080`. Frontend code makes requests like `fetch('/api/auth/login')` (no host).
+**Alternatives considered** Have the frontend hit `http://localhost:8080/api/...` directly, relying on CORS to permit it.
+**Rationale** Same-origin in the browser means the cookie set by login is *automatically* sent on every subsequent fetch — no `credentials: 'include'` ceremony, no CORS preflight surprises. The proxy makes the frontend think the backend is at the same origin even though they're separate processes. Production will deploy them under one nginx so this is also closer to prod behaviour.
+**Trade-offs accepted** Only works when running through `vite dev`. Production builds need a real reverse proxy (nginx) to reproduce this pattern — already planned for Epic 5 deployment.
+
+> 💡 中文要点：Vite dev server 把 `/api/*` 反向代理到 8080。前端 fetch 用相对路径 `/api/auth/login`，浏览器认为这是同源请求，cookie 自动带，没有 CORS 预检的麻烦。生产环境会用 nginx 实现同样的效果。
+
+---
+
+### D-29 — Tailwind v4 (CSS-first import) instead of v3 (`tailwind.config.js`)
+
+**Date / where** Task 15 — `frontend/src/index.css` first line is `@import "tailwindcss";`
+**Choice** Adopt Tailwind v4. Configure via the single CSS import + the `@tailwindcss/vite` plugin; no separate `tailwind.config.js` file in this MVP.
+**Alternatives considered** Tailwind v3 (more references online, larger ecosystem of v3-targeted articles).
+**Rationale** v4 ships *default theme inline*, has a much smaller config surface, and integrates with Vite via a first-party plugin (`@tailwindcss/vite`). For a thesis project where I will not be customising the colour palette or adding plugins, v4's "zero-config" mode beats v3's classic config file.
+**Trade-offs accepted** Some online tutorials use v3 syntax (e.g. `tailwind.config.js`, `@tailwind base/components/utilities`); when copy-pasting examples I must check they are v4-compatible (the import line is `@import "tailwindcss";`, not the three `@tailwind ...` directives).
+
+> 💡 中文要点：用 Tailwind v4 不用 v3 —— v4 用 CSS 里一行 `@import "tailwindcss"` + Vite 插件就搞定，不需要 `tailwind.config.js`。代价是网上很多教程是 v3 语法，复制时要留心。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -503,17 +527,22 @@ Build-plugin notes:
 
 ### 3.2 Frontend (`frontend/package.json`)
 
-Currently the M1 baseline only:
+Currently the M1 baseline plus Task 15 additions:
 
 | Dependency | Version | Why |
 |---|---|---|
 | `react` / `react-dom` | 19.2.4 | UI framework |
+| **`react-router-dom`** | **7.15** (new) | Client-side routing for /login, /register, /me, etc. (used from Task 17) |
 | `vite` | 8.0.1 | Dev server + build |
 | `@vitejs/plugin-react` | 6.0.1 | JSX/Fast Refresh |
+| **`tailwindcss`** | **4.2.4** (new, dev) | Utility-first styling (v4 — CSS-first import, no config file) |
+| **`@tailwindcss/vite`** | **4.2.4** (new, dev) | Tailwind's first-party Vite plugin (replaces PostCSS config) |
 | `typescript` | 5.9.3 | Type safety |
 | `eslint` + plugins | 9.x | Linting |
 
-Tasks 15–17 will add: `react-router`, `tailwindcss` v4, an HTTP client wrapper.
+Vite dev proxy now forwards `/api/**` → `http://localhost:8080` (D-28).
+
+Tasks 16–17 will add an `apiClient.ts` wrapper, then a `BrowserRouter` setup. Currently the dev server starts and the existing health-check page renders with Tailwind base styles applied (different fonts vs Vite template default).
 
 ### 3.3 Infrastructure (`infra/docker-compose.yml`)
 
@@ -659,4 +688,10 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 14 completion. Phase A backend foundation is feature-complete + tested at three layers (36 tests). The 401-vs-403 cosmetic from D-26 is fixed (D-27). Next entry: Task 15 — frontend dependencies (Phase C begins).*
+- **The frontend toolchain is small and explicit by 2026 standards.** Adding a router and a styling system to a Vite + React + TypeScript project takes two `npm install` commands, one CSS import line, and three lines of config. No PostCSS config, no Babel, no ejected webpack. Compared to a CRA-style 2019 project this is a different planet — worth noting because it makes the frontend Tasks 15–24 small and self-contained.
+
+> 💡 中文要点：2026 年的前端工具链已经非常精简 —— 加路由和样式只要 2 条 npm + 1 行 CSS + 3 行配置，没有 PostCSS / Babel / ejected webpack 的复杂性。这让前端 10 个 Task 可以一直保持小步推进。
+
+---
+
+*Last updated: 2026-05-08 after Task 15 completion. Frontend dev server now boots with Tailwind v4 + Vite proxy. Next entry: Task 16 — `apiClient.ts`.*
