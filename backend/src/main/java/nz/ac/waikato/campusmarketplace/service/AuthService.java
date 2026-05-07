@@ -4,11 +4,14 @@ import nz.ac.waikato.campusmarketplace.entity.User;
 import nz.ac.waikato.campusmarketplace.exception.ApiException;
 import nz.ac.waikato.campusmarketplace.exception.ErrorCode;
 import nz.ac.waikato.campusmarketplace.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.regex.Pattern;
 
 @Service
@@ -26,6 +29,8 @@ public class AuthService {
     private final EmailService email;
     private final String emailBaseUrl;
 
+    private StringRedisTemplate redis;
+
     public AuthService(UserRepository users,
                        PasswordEncoder encoder,
                        RateLimitService rateLimit,
@@ -38,6 +43,11 @@ public class AuthService {
         this.jwt = jwt;
         this.email = email;
         this.emailBaseUrl = emailBaseUrl;
+    }
+
+    @Autowired(required = false)
+    public void setRedis(StringRedisTemplate redis) {
+        this.redis = redis;
     }
 
     @Transactional
@@ -68,6 +78,36 @@ public class AuthService {
         return saved;
     }
 
+    public LoginResult login(String rawEmail, String password) {
+        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase();
+        String key = "ratelimit:login:" + email;
+        if (rateLimit.exceeded(key, 5, Duration.ofMinutes(15))) {
+            throw new ApiException(ErrorCode.TOO_MANY_ATTEMPTS,
+                    "Too many attempts. Try again in 15 minutes.");
+        }
+        User u = users.findByEmail(email).orElse(null);
+        if (u == null || !encoder.matches(password, u.getPassword())) {
+            rateLimit.increment(key, Duration.ofMinutes(15));
+            throw new ApiException(ErrorCode.BAD_CREDENTIALS,
+                    "Email or password is incorrect.");
+        }
+        JwtService.IssuedToken issued = jwt.issue(u.getId(), u.getEmail(), u.getNickname());
+        return new LoginResult(u, issued.token());
+    }
+
+    public void logout(String token) {
+        if (token == null || redis == null) return;
+        JwtService.ParsedToken p = jwt.parse(token);
+        Duration remaining = Duration.between(Instant.now(), p.expiresAt());
+        if (remaining.isNegative() || remaining.isZero()) return;
+        redis.opsForValue().set("jwt:blacklist:" + p.jti(), "1", remaining);
+    }
+
+    public boolean isBlacklisted(String jti) {
+        if (redis == null) return false;
+        return Boolean.TRUE.equals(redis.hasKey("jwt:blacklist:" + jti));
+    }
+
     private void validateEmail(String email) {
         if (!EMAIL_RE.matcher(email).matches()) {
             throw new ApiException(ErrorCode.INVALID_EMAIL,
@@ -90,10 +130,11 @@ public class AuthService {
                     "Nickname must be 2-20 characters, no leading/trailing spaces.");
         }
         int len = nickname.length();
-        boolean badEdges = !nickname.equals(nickname.trim());
-        if (len < 2 || len > 20 || badEdges) {
+        if (len < 2 || len > 20 || !nickname.equals(nickname.trim())) {
             throw new ApiException(ErrorCode.INVALID_NICKNAME,
                     "Nickname must be 2-20 characters, no leading/trailing spaces.");
         }
     }
+
+    public record LoginResult(User user, String token) {}
 }
