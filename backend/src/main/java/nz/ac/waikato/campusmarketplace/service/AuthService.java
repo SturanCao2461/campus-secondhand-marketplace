@@ -108,6 +108,12 @@ public class AuthService {
         return Boolean.TRUE.equals(redis.hasKey("jwt:blacklist:" + jti));
     }
 
+    public User getCurrentUser(Long userId) {
+        return users.findById(userId)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHENTICATED,
+                        "Please log in to continue."));
+    }
+
     private void validateEmail(String email) {
         if (!EMAIL_RE.matcher(email).matches()) {
             throw new ApiException(ErrorCode.INVALID_EMAIL,
