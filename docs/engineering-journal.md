@@ -461,6 +461,17 @@ Combined, these make the classic CSRF attack vector fail before it reaches our b
 
 ---
 
+### D-27 — Custom `AuthenticationEntryPoint` returning 401 + `ApiErrorResponse`
+
+**Date / where** Task 14 — `SecurityConfig.apiAuthenticationEntryPoint`
+**Choice** Register a Bean of type `AuthenticationEntryPoint` that, on any unauthenticated access to a protected endpoint, writes status `401` and a JSON body of shape `{"code":"UNAUTHENTICATED","message":"..."}` — the same `ApiErrorResponse` shape that `GlobalExceptionHandler` produces for thrown `ApiException`s.
+**Why now** This is the follow-up to D-26 noted during the Postman demo. Folded into Task 14 because the integration test `meRequiresAuthAndReturnsCurrentUser` asserts `HttpStatus.UNAUTHORIZED` for unauthenticated `/api/auth/me`, which requires this fix.
+**Trade-offs accepted** None significant. Eliminates the inconsistency where security blocks return Spring's default 403 (HTML) while service-thrown errors return our 401 (JSON). Now both paths return the same shape.
+
+> 💡 中文要点：D-26 的后续修复。在 SecurityConfig 里加了一个 `AuthenticationEntryPoint` Bean，让 Filter 层拒绝时也返回标准的 `{"code":"UNAUTHENTICATED",...}` JSON + 401 状态码，跟我们 `GlobalExceptionHandler` 的格式一致。集成测试一上来就要求这个，所以顺手在 Task 14 修了。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -634,4 +645,18 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 13 manual demo. Phase A backend foundation is feature-complete and verified end-to-end. Next entry: Task 14 — backend integration test (will also fold in the 401-vs-403 fix from D-26).*
+- **Two test layers, two different jobs.** Unit tests (Tasks 7–10) check *the logic in `AuthService`* by mocking everything around it. Integration tests (Task 14) check *the whole HTTP path* by spinning up a real `SpringBootTest` against real MySQL + real Redis (via Testcontainers) and hitting it with `TestRestTemplate`. The first run of the integration tests took **17 seconds**; that is *not* slow given they boot a full Spring context and pull two Docker images, but it is a different category from the millisecond-scale unit tests. Both layers earn their keep: unit tests run on every save and catch logic bugs; integration tests run on push and catch wiring/security/DB-mapping bugs that mocks miss.
+
+> 💡 中文要点：单元测试和集成测试是两个不同层次的活。单测毫秒级跑，专注业务逻辑；集成测试 17 秒跑一次，但启动整个 Spring + 真 MySQL + 真 Redis，能抓到单测漏掉的"装配 / 安全 / 数据库映射"类问题。两个都不能少。
+
+- **`@ServiceConnection` is the magic that makes Testcontainers + Spring Boot 3 actually convenient.** Spring Boot reads metadata off the `MySQLContainer` and **automatically** sets `spring.datasource.url/username/password` to point at the container — no `@DynamicPropertySource` needed. Redis still needs the manual property registration because there is no `@ServiceConnection` for `GenericContainer<redis>`. Worth knowing for future projects.
+
+> 💡 中文要点：`@ServiceConnection` 注解让 Spring Boot 3 自动读取 Testcontainers 容器信息，自动配 datasource URL/用户/密码 —— 完全不用手写 `@DynamicPropertySource`。Redis 没有官方 `@ServiceConnection` 支持，所以那一段还得手动注。
+
+- **Phase A is now defended at three layers.** (1) `AuthServiceXxxTest` — 19 unit tests, mocked dependencies. (2) `RateLimitServiceTest` + `ConsoleEmailServiceTest` — 3 component tests, real Redis via Testcontainers. (3) `AuthControllerIntegrationTest` — 8 end-to-end tests, real MySQL + Redis + full Spring context + HTTP. **Total: 36 tests passing, all green.** Any future change that breaks the auth flow will be caught at one of these layers before hitting production. This is what "test pyramid" looks like in practice.
+
+> 💡 中文要点：Phase A 现在被三层测试守着 —— 19 个单测（mock）+ 3 个组件测（真 Redis）+ 8 个集成测（真 MySQL+Redis+全 Spring）= 36 个测试全绿。这就是教科书"测试金字塔"在真实项目里长成什么样。
+
+---
+
+*Last updated: 2026-05-08 after Task 14 completion. Phase A backend foundation is feature-complete + tested at three layers (36 tests). The 401-vs-403 cosmetic from D-26 is fixed (D-27). Next entry: Task 15 — frontend dependencies (Phase C begins).*
