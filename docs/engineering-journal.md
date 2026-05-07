@@ -496,6 +496,36 @@ Combined, these make the classic CSRF attack vector fail before it reaches our b
 
 ---
 
+### D-30 — Single `apiClient` instead of fetch sprinkled in components
+
+**Date / where** Task 16 — `frontend/src/api/apiClient.ts`
+**Choice** All HTTP calls in the frontend go through one tiny module exposing `api.get / post / put / delete`. The module:
+1. Sets `credentials: 'include'` on every request (cookie sent and stored).
+2. Adds `Content-Type: application/json` only when a body is present.
+3. Parses 204 to `undefined` and other 2xx responses as JSON.
+4. Throws `ApiError(status, code, message)` on non-2xx, mapping the backend's `{code, message}` shape into a typed exception.
+**Alternatives considered** Use `fetch` directly in each component; pull in a heavier client like `axios` or `@tanstack/query`.
+**Rationale** Bare `fetch` in every component duplicates 8 lines of boilerplate and forces every author to remember `credentials: 'include'`. Forgetting it once means cookies don't go and the bug looks like "everything fine in dev tools but the user keeps getting logged out." Axios/Query are great for larger apps but add weight; for six endpoints a 40-line wrapper is the right size.
+**Trade-offs accepted** Hand-rolled, so no caching/deduping/retry helpers. We don't need them at this scale; if Epic 3+ needs it, this single module is the right place to add it (or migrate to `@tanstack/query` then).
+
+> 💡 中文要点：所有 HTTP 调用统一走一个 40 行的 `apiClient` 模块，自动加 `credentials: 'include'`、自动 JSON、自动把后端错误抛成带 `code/message` 的 `ApiError`。这样每个组件不会忘记设置 cookie 行为，错误处理也集中。
+
+---
+
+### D-31 — `ApiError` carries the backend's `code` field
+
+**Date / where** Task 16 — `class ApiError extends Error`
+**Choice** Subclass `Error` with two extra properties: `status: number` (HTTP) and `code: string` (the `ErrorCode` enum name from D-19/`ErrorCode.java`). Components catch by `code`, not by message text.
+**Rationale** Pages need to react differently to different errors:
+- `INVALID_EMAIL` → highlight the email field.
+- `EMAIL_EXISTS` → show "log in instead?" link.
+- `TOO_MANY_ATTEMPTS` → show countdown.
+Catching by `e.message` is fragile (text changes break it); catching by `e.code` is stable because the enum is the contract. This also means localising the `message` later doesn't break any component logic.
+
+> 💡 中文要点：`ApiError` 把后端的 `code` 字段（枚举名，如 `INVALID_EMAIL`）当成"稳定 API"。前端按 `code` 分支处理，不按 `message` 文本，这样以后改文案/做翻译都不会破坏组件逻辑。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -694,4 +724,10 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 15 completion. Frontend dev server now boots with Tailwind v4 + Vite proxy. Next entry: Task 16 — `apiClient.ts`.*
+- **A 40-line file replaces a hundred ad-hoc fetch calls.** `apiClient.ts` is short enough to scan in 30 seconds, but it removes the entire class of "I forgot `credentials: 'include'` again" bugs, and standardises error handling so every component catches the same `ApiError` shape. This is the kind of small infrastructure investment that pays off the moment the second consumer is written — and disastrous to skip until late, because by then 10 components have 10 slightly different fetch patterns. Worth lifting out of Tasks 18+ proactively (we did, here).
+
+> 💡 中文要点：`apiClient.ts` 只有 40 行，但它消除了所有"忘记带 cookie"和"错误处理各搞一套"的隐患。这种"小基础设施"必须**在第二个消费者出现之前**就抽出来 —— 拖到后面才做意味着要回去改 10 个组件的 fetch 写法。
+
+---
+
+*Last updated: 2026-05-08 after Task 16 completion. Frontend now has a typed HTTP client. Next entry: Task 17 — React Router + first multi-page app rendering.*
