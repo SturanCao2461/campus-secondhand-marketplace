@@ -312,6 +312,56 @@ These are deliberate design choices, not bugs. Each decision shaped the codebase
 
 ---
 
+### D-19 — Disable CSRF (justified by SameSite=Lax + HttpOnly cookie)
+
+**Date / where** Task 12 — `SecurityConfig` calls `.csrf(AbstractHttpConfigurer::disable)`
+**Choice** Turn off Spring Security's CSRF protection.
+**Alternatives considered** Keep CSRF enabled with the standard double-submit token; switch to header-based JWT (`Authorization: Bearer …`) which makes CSRF moot.
+**Rationale** CSRF protection exists because a browser will *automatically* attach cookies to cross-site requests, letting attacker.com trick the user's browser into making authenticated requests to our site. Two layers we already have neutralise this:
+1. **`SameSite=Lax`** on the auth cookie — modern browsers refuse to send the cookie on cross-site POSTs (Lax allows top-level GET navigations only).
+2. **`HttpOnly`** on the auth cookie — JavaScript on a malicious page can't even read the token to forge a request.
+Combined, these make the classic CSRF attack vector fail before it reaches our backend. Adding a CSRF token on top would be belt-and-braces but adds frontend complexity for marginal gain.
+**Trade-offs accepted** Relies on browser behaviour for `SameSite=Lax`. Old browsers (pre-2020) may not honour it. For a thesis project targeting current Chrome/Firefox/Safari, acceptable.
+
+> 💡 中文要点：关掉 CSRF，靠 Cookie 的 `SameSite=Lax` + `HttpOnly` 两层组合防御。`SameSite=Lax` 让浏览器在跨站 POST 时不带 cookie；`HttpOnly` 让恶意 JS 读不到 token。这两条等于 CSRF 攻击的入口被堵死了。
+
+---
+
+### D-20 — Stateless session (`SessionCreationPolicy.STATELESS`)
+
+**Date / where** Task 12 — `SecurityConfig`
+**Choice** Tell Spring Security never to create or use an `HttpSession`.
+**Alternatives considered** Default `IF_REQUIRED` (Spring will create a session when needed).
+**Rationale** Our auth state lives entirely in the JWT cookie + Redis blacklist. An `HttpSession` would be a third place state could hide, breaking the stateless contract and causing scaling problems (sticky sessions or session replication).
+**Trade-offs accepted** Anything that *requires* server-side session (e.g. flash messages between redirects) won't work. Not relevant for a JSON API.
+
+> 💡 中文要点：把 Spring Session 完全关掉。所有认证状态只存在于 JWT Cookie + Redis 黑名单里，绝不依赖服务端 Session。横向扩展时不需要 sticky session。
+
+---
+
+### D-21 — `addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)`
+
+**Date / where** Task 12 — `SecurityConfig`
+**Choice** Insert `JwtAuthenticationFilter` *before* Spring's built-in `UsernamePasswordAuthenticationFilter` in the chain.
+**Rationale** By the time the request reaches Spring's authentication filters, our filter has already consumed the cookie and written `AuthPrincipal` into the SecurityContext. Spring's authn filters then see "ok, this request is already authenticated" and skip their work. Inserting *after* would be a no-op because Spring's filter would have already 401'd unauthenticated requests by then.
+
+> 💡 中文要点：`addFilterBefore(...)` 把我们自己的 JWT Filter 插在 Spring 默认认证 Filter 之前。这样我们先把"这是谁"写进 SecurityContext，Spring 自带的 Filter 看到已认证就直接放行。
+
+---
+
+### D-22 — `permitAll` whitelist for public endpoints, default deny for `/api/**`
+
+**Date / where** Task 12 — `authorizeHttpRequests` block
+**Choice**
+- Explicitly allow `/api/health`, `/api/auth/register`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password`.
+- Everything else under `/api/**` requires authentication.
+- Anything outside `/api/**` (static files, future error pages) is open.
+**Rationale** Default deny is safer than default allow — adding a new protected endpoint at `/api/listings` automatically inherits authentication without us remembering to register it. The whitelist is narrow and reviewable; if someone adds a new "public" auth endpoint later, they have to consciously add it to the list.
+
+> 💡 中文要点：API 默认全部要登录，只显式开放健康检查 + 注册/登录/忘密/重置 5 个公开入口。新加的接口自动受保护，不会"不小心"暴露。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -447,4 +497,14 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 11 completion. Next entry: Task 12 — SecurityConfig + CorsConfig.*
+- **CORS and CSRF are different problems** — they sound similar and both involve "cross-something" but they protect against different threats. CORS controls *which origins are allowed to read responses* from us (browser-enforced); CSRF protects against *cross-site forged requests using the user's cookie*. Configuring CORS does not automatically protect against CSRF, and disabling CSRF (D-19) does not affect CORS. Keeping these mentally separate avoided a confused configuration.
+
+> 💡 中文要点：CORS 和 CSRF 听着像，但解决不同问题。CORS 是"哪些前端域名能读我们的响应"，CSRF 是"防止别人借用户 cookie 偷偷发请求"。两者要分开配，不要混。
+
+- **Configuration is code too** — `SecurityConfig` is just 25 lines, but it encodes a half-dozen security decisions (D-19 to D-22). Reading those 25 lines now feels much denser than reading 25 lines of business logic, because each line is a *policy*, not a step. This is one reason auditing security configs is its own skill in the industry — every change has high blast radius.
+
+> 💡 中文要点：`SecurityConfig` 只有 25 行，但每一行都是一条**安全策略**，密度远高于普通业务代码。这也是为什么"审 SecurityConfig"在业界被当成专门的活——改一行可能影响全站。
+
+---
+
+*Last updated: 2026-05-08 after Task 12 completion. Next entry: Task 13 — AuthController + DTOs (the demoable HTTP API).*
