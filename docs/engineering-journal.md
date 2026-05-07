@@ -571,6 +571,28 @@ Catching by `e.message` is fragile (text changes break it); catching by `e.code`
 
 ---
 
+### D-36 — LoginPage validates `?next=` starts with `/` (open-redirect mitigation)
+
+**Date / where** Task 22 — `LoginPage.onSubmit`
+**Choice** After a successful login, read `?next=` from the URL. If it starts with `/`, navigate there. Otherwise force-navigate to `/`.
+**Why** `ProtectedRoute` uses `?next=<original-path>` to bring users back after login (D-34). Without validation, a malicious page could craft a link like `/login?next=https://evil.com/phish` — after the user logs in, they'd be redirected to an attacker site that mimics ours. Requiring `next` to start with `/` limits redirects to the same origin. Sometimes called the "open redirect" vulnerability; it looks harmless but is a standard OWASP item.
+**Trade-offs accepted** Can't accept absolute URLs even to legitimate subdomains. For this MVP (single origin) that's fine.
+
+> 💡 中文要点：登录成功后用 `?next=` 参数跳转回原页面前，**必须校验**它以 `/` 开头。否则攻击者可以构造 `/login?next=https://evil.com` 来做开放重定向（Open Redirect）钓鱼。这是 OWASP 标准项，看着小但不能漏。
+
+---
+
+### D-37 — Extract `PasswordInput` with show/hide toggle as a shared component
+
+**Date / where** Task 21 UX polish (between Tasks 21 and 22) — `frontend/src/components/PasswordInput.tsx`
+**Choice** Wrap the standard password `<input>` in a small component that toggles `type` between `password` and `text` via a "Show/Hide" button.
+**Why now** Three pages use a password field (Register, Login, ResetPassword). Extracting once to a component means the "show password" feature is consistent, and if we later want to swap to an eye-icon SVG we change one place instead of three.
+**Trade-offs accepted** Every password field now has an extra interactive element; passing tests that assert on raw `<input type="password">` structure would need updating (none currently).
+
+> 💡 中文要点：密码框带"显示/隐藏"切换是常见 UX 改进。把它抽成可复用组件 `PasswordInput`，注册/登录/重置密码三处都用，要改样式（比如换成眼睛图标）只改一处。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -789,6 +811,10 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 > 💡 中文要点：Navbar 用 `{user ? 已登录视图 : 未登录视图}` 三目表达式切换。点"登出"后 Context 更新，Navbar 自动重渲染变回"登录/注册"按钮 —— **React 声明式渲染的力量**，不用自己操作 DOM。
 
+- **Demo moment #2 unlocked: login + register are now browsable end-to-end in a browser.** A visitor can go to `localhost:5173`, click Sign up → fill the form → be auto-logged in → see Navbar update to "Hi, …" → click Log out → click Log in → fill the form → Navbar updates again. Every click calls a real backend endpoint (through the Vite proxy), cookies flow HttpOnly-correctly, and the UI reflects state transitions immediately. This is the first "can be shown to someone non-technical" milestone of the project — Task 22 was the target since day one of Epic 1.
+
+> 💡 中文要点：Task 22 完成 = **第一次能在浏览器里端到端演示给非技术人看的时刻**。注册 → 自动登录 → Navbar 变化 → 登出 → 登录 → Navbar 变化，每一步都是真接后端。这是 Epic 1 设计之初就瞄准的演示节点。
+
 ---
 
-*Last updated: 2026-05-08 after Task 21 completion. Register page is live at `/register` with form validation and error display. Next entry: Task 22 — LoginPage (the teacher-demo milestone).*
+*Last updated: 2026-05-08 after Task 22 completion. Register + Login pages are live and work end-to-end. The teacher-demo milestone (node ④) is unlocked. Next entry: Task 23 — ForgotPasswordPage + ResetPasswordPage.*
