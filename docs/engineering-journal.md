@@ -247,6 +247,47 @@ These are deliberate design choices, not bugs. Each decision shaped the codebase
 
 ---
 
+### D-14 — `forgotPassword` is silent on unknown email
+
+**Date / where** Task 10 — `AuthService.forgotPassword`
+**Choice** When the email is not registered, the method **returns successfully** without sending an email or writing to Redis. The HTTP response is the same as for a registered email.
+**Alternatives considered** Tell the caller "no such account".
+**Rationale** Same threat model as the login error message (D-11): a different response would let an attacker enumerate which emails are registered. The endpoint behaves indistinguishably for registered and unregistered addresses.
+**Trade-offs accepted** A user who typoed their email gets no feedback that the typo happened — they just don't receive an email. The reset page should hint at this in copy.
+
+> 💡 中文要点：忘密接口对"邮箱不存在"**默默成功**（不报错也不发邮件）。否则就能用这个接口枚举哪些邮箱已注册。代价是用户打错邮箱时不会被提示。
+
+---
+
+### D-15 — Reset token: 384 bits of randomness, URL-safe Base64, 30-min TTL, single use
+
+**Date / where** Task 10 — `forgotPassword` / `resetPassword`
+**Choice** `SecureRandom.nextBytes(48)` → URL-safe Base64 without padding → stored in Redis under `auth:reset:<token>` with TTL 30 minutes; `resetPassword` deletes the key on first successful use.
+**Alternatives considered**
+- Shorter token (16 bytes / 128 bits) — would still be uncrackable but offers no real benefit at modern key sizes.
+- Numeric OTP — requires a second factor (phone) we don't have.
+- Self-contained JWT reset token — can't be revoked on first use without a blacklist anyway, so no win over Redis (see D-8).
+**Rationale**
+- 48 bytes (384 bits) is conventional overkill — guessing one is computationally infeasible, and the TTL caps the attack window anyway.
+- URL-safe Base64 (`-_` instead of `+/`) means the token slots into a query string without escaping.
+- `redis.delete(key)` after a successful reset is the "single-use" enforcement — the same link can't be replayed.
+
+> 💡 中文要点：重置 token = 48 字节随机数 → URL-safe Base64 → 存 Redis（30 分钟过期 + 用一次就删）。三道闸门：随机性大到猜不中、过期时间短、一次性删除。
+
+---
+
+### D-16 — `validateEmail` is **not** called in `forgotPassword`
+
+**Date / where** Task 10 — observed during implementation
+**Choice** `forgotPassword` lower-cases the input and tries `findByEmail` directly, without running the `@students.waikato.ac.nz` regex check.
+**Alternatives considered** Validate the suffix first and throw `INVALID_EMAIL` for other domains.
+**Rationale** Validating would leak information: a non-Waikato email would get a clear "invalid email" error, while a non-existent Waikato email would get the silent success from D-14. An attacker comparing the two could infer the suffix policy. By treating any well-formed email the same way (look it up, do nothing if not found), the endpoint reveals nothing about who is or isn't a user.
+**Trade-offs accepted** Slightly counter-intuitive — usually we validate input early. Here the *security* requirement overrides the usual hygiene.
+
+> 💡 中文要点：忘密接口**不**校验邮箱后缀，因为校验会泄露信息（"非校园邮箱被拒"和"邮箱不存在被默默成功"是两种不同回应）。统一都默默处理，攻击者就什么都问不出来。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -360,4 +401,20 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 9 completion. Next entry: Task 10 — forgot password + reset password.*
+- **`ArgumentCaptor` for verifying generated values** — When the value sent to a mock is generated inside the method (random reset tokens, the email body), you can't predict it for `eq(...)`. Mockito's `ArgumentCaptor` records what was actually passed, then you assert on its shape:
+  ```java
+  ArgumentCaptor<String> tokenCap = ArgumentCaptor.forClass(String.class);
+  verify(valueOps).set(tokenCap.capture(), eq("1"), eq(Duration.ofMinutes(30)));
+  assertTrue(tokenCap.getValue().startsWith("auth:reset:"));
+  ```
+  This pattern (assert on *shape*, not *exact value*) is the right tool whenever output depends on `Random`, `Instant.now()`, or another non-deterministic source.
+
+> 💡 中文要点：测试随机生成的值（如 reset token），不能用 `eq(...)` 精确匹配；用 `ArgumentCaptor` 抓住实际值再断言它的"形状"（前缀对不对、长度合不合理）。
+
+- **Anti-enumeration as a recurring design principle** — The same idea ("don't let response shape leak existence of an account") appeared in three independent decisions: D-11 (login error), D-14 (forgot password silent), D-16 (no email validation in forgotPassword). What looks like overcaution at one site becomes a coherent pattern when seen across the whole flow. This is worth highlighting as a "principle in action" example in the thesis.
+
+> 💡 中文要点：D-11/D-14/D-16 三处独立决策其实都在做同一件事：**不让响应差异泄露账号存不存在**。论文里可以把这个串成一条"防枚举"主线。
+
+---
+
+*Last updated: 2026-05-08 after Task 10 completion. AuthService is feature-complete (4 methods + helpers, 19 unit tests). Next entry: Task 11 — JwtAuthenticationFilter.*
