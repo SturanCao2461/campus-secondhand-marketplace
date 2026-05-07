@@ -1,21 +1,20 @@
-import { useEffect, useState } from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 
-function App() {
-    const [status, setStatus] = useState<string>('loading...')
-
-    useEffect(() => {
-        fetch('/api/health')
-            .then(res => res.json())
-            .then(data => setStatus(`${data.status} - ${data.service}`))
-            .catch(() => setStatus('error: cannot reach backend'))
-    }, [])
-
-    return (
-        <div style={{ padding: '2rem' }}>
-            <h1>Campus Secondhand Marketplace</h1>
-            <p>Backend status: <strong>{status}</strong></p>
-        </div>
-    )
+function PlaceholderHome() {
+  return (
+    <div className="p-8">
+      <h1 className="text-3xl font-semibold">Campus Secondhand Marketplace</h1>
+      <p className="mt-2 text-slate-600">Frontend skeleton ready. Auth pages coming online task by task.</p>
+    </div>
+  )
 }
 
-export default App
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<PlaceholderHome />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
