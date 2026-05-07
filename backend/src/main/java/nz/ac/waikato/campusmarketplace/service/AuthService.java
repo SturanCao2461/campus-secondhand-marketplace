@@ -10,8 +10,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.regex.Pattern;
 
 @Service
@@ -21,6 +23,8 @@ public class AuthService {
             Pattern.compile("^[a-z0-9._%+\\-]+@students\\.waikato\\.ac\\.nz$");
     private static final Pattern PASSWORD_LETTER = Pattern.compile(".*[A-Za-z].*");
     private static final Pattern PASSWORD_DIGIT = Pattern.compile(".*\\d.*");
+
+    private static final SecureRandom RND = new SecureRandom();
 
     private final UserRepository users;
     private final PasswordEncoder encoder;
@@ -112,6 +116,47 @@ public class AuthService {
         return users.findById(userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHENTICATED,
                         "Please log in to continue."));
+    }
+
+    public void forgotPassword(String rawEmail) {
+        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase();
+        User u = users.findByEmail(email).orElse(null);
+        if (u == null || redis == null) return;
+
+        byte[] tokenBytes = new byte[48];
+        RND.nextBytes(tokenBytes);
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
+        String key = "auth:reset:" + token;
+        redis.opsForValue().set(key, String.valueOf(u.getId()), Duration.ofMinutes(30));
+
+        String link = emailBaseUrl + "/reset-password?token=" + token;
+        String body = "We received a request to reset your password.\n\n"
+                + "Click the link below within 30 minutes to set a new one:\n"
+                + link + "\n\n"
+                + "If you didn't request this, ignore this email.";
+        this.email.send(u.getEmail(), "Reset your Campus Marketplace password", body);
+    }
+
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        if (redis == null) {
+            throw new ApiException(ErrorCode.INVALID_TOKEN,
+                    "This reset link is invalid or has expired.");
+        }
+        String key = "auth:reset:" + token;
+        String userIdRaw = redis.opsForValue().get(key);
+        if (userIdRaw == null) {
+            throw new ApiException(ErrorCode.INVALID_TOKEN,
+                    "This reset link is invalid or has expired.");
+        }
+        validatePassword(newPassword);
+        Long userId = Long.parseLong(userIdRaw);
+        User u = users.findById(userId).orElseThrow(() ->
+                new ApiException(ErrorCode.INVALID_TOKEN,
+                        "This reset link is invalid or has expired."));
+        u.setPassword(encoder.encode(newPassword));
+        users.save(u);
+        redis.delete(key);
     }
 
     private void validateEmail(String email) {
