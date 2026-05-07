@@ -791,4 +791,4 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 19 completion. App shell is fully wired: navbar reacts to auth state, protected-route guard is available. Next entry: Task 20 — HomePage + MePage.*
+*Last updated: 2026-05-08 after Task 20 completion. Home page and Me page are live; `/me` is now guarded by `ProtectedRoute`. Next entry: Task 21 — RegisterPage (first real form).*
