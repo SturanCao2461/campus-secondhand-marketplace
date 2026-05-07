@@ -817,4 +817,16 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 22 completion. Register + Login pages are live and work end-to-end. The teacher-demo milestone (node ④) is unlocked. Next entry: Task 23 — ForgotPasswordPage + ResetPasswordPage.*
+- **ForgotPasswordPage and ResetPasswordPage complete the auth UI.** Both pages follow the same pattern as Login/Register: call `api.post(...)`, catch `ApiError` by code, show inline error or success state. `ResetPasswordPage` reads `?token=` from the URL and shows an "Invalid link" guard when the token is absent — a small but important defensive branch. Both reuse `PasswordInput` (D-37), so show/hide works consistently across all password fields in the app.
+
+> 💡 中文要点：忘密和重置密码页复用了 `PasswordInput` 和 `apiClient`，遵循和登录/注册页完全一样的模式：调接口 → 捕获 `ApiError` → 展示错误或成功状态。`ResetPasswordPage` 还加了"没有 token 就显示 Invalid link"的边界保护。
+
+---
+
+- **Demo moment #3 — Full browser E2E for Epic 1 auth (2026-05-08).** All 7 sections of `docs/manual-e2e-epic1.md` passed in one sitting: registration edge cases, login, cookie attributes (HttpOnly/SameSite/Secure/Expires), protected route + `?next=` restore, logout blacklist replay, rate-limit lockout, forgot/reset password full flow, and anti-enumeration check (nonexistent email returns same "Check your email" page). This is the final teacher-demo milestone for Epic 1.
+
+> 💡 中文要点：2026-05-08 在浏览器里跑完了 `manual-e2e-epic1.md` 全部 7 个区块，Epic 1 的第四个（最后一个）老师演示节点正式解锁。整个认证系统从后端 API 到前端页面全部端到端验证完毕。
+
+---
+
+*Last updated: 2026-05-08 after Task 24 completion. Epic 1 auth is fully implemented, tested, and manually verified end-to-end. All routes wired, all 36 backend tests green, frontend production build clean. Ready to move to Epic 2.*
