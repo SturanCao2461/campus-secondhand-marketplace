@@ -526,6 +526,30 @@ Catching by `e.message` is fragile (text changes break it); catching by `e.code`
 
 ---
 
+### D-32 — Auto-login after register (register → login in one click)
+
+**Date / where** Task 18 — `AuthProvider.register` calls `login(email, password)` after the register API succeeds
+**Choice** After a successful `POST /api/auth/register`, immediately call `login()` so the user lands in a logged-in state without having to fill the login form again.
+**Alternatives considered** Redirect to `/login` and make the user type their credentials a second time.
+**Rationale** Forcing a second login after registration is a UX anti-pattern — the user just proved they know the password 5 seconds ago. Auto-login reduces friction and matches what users expect from modern apps (Spotify, GitHub, etc. all do this).
+**Trade-offs accepted** If the register endpoint ever returns a token directly (some APIs do), we could skip the second round-trip. For now we make two calls (register + login) which is ~100ms extra — imperceptible.
+
+> 💡 中文要点：注册成功后自动调 `login()` 让用户直接进入已登录状态，不用再填一次登录表单。多一次 API 调用（~100ms），但 UX 好很多。
+
+---
+
+### D-33 — `AuthProvider` calls `/me` on mount to restore session
+
+**Date / where** Task 18 — `useEffect` in `AuthProvider`
+**Choice** On app load, `AuthProvider` immediately calls `GET /api/auth/me`. If the cookie is still valid, the user is restored into state without re-login. If 401, `user` stays `null` and `loading` becomes `false`.
+**Alternatives considered** Store user info in `localStorage` and only call `/me` to verify.
+**Rationale** The cookie is the single source of truth. If it's valid, `/me` returns the user; if expired/blacklisted, it returns 401. No stale localStorage to sync. The `loading` flag lets pages show a spinner until we know whether the user is logged in — preventing a flash of "please log in" on page refresh for authenticated users.
+**Trade-offs accepted** Every page load makes one `/me` call even if the user is not logged in (returns 401 quickly). Acceptable overhead for the simplicity of "cookie = truth".
+
+> 💡 中文要点：App 一启动就调 `/me`，如果 cookie 还活着就恢复登录态（不用重新登录）。`loading` 标志让页面在确认前显示 spinner，避免"闪一下登录页又跳走"的糟糕体验。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -728,6 +752,14 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 > 💡 中文要点：`apiClient.ts` 只有 40 行，但它消除了所有"忘记带 cookie"和"错误处理各搞一套"的隐患。这种"小基础设施"必须**在第二个消费者出现之前**就抽出来 —— 拖到后面才做意味着要回去改 10 个组件的 fetch 写法。
 
+- **React Context as the "right size" state primitive for auth.** `AuthContext` + `AuthProvider` + `useAuth` is ~70 lines combined. It gives every component in the tree `const { user, login, logout } = useAuth()`, without any global event bus, no Redux, no Zustand, no prop drilling. For data that genuinely is global and cross-cutting (who is logged in?), Context is exactly what it's for. The `useAuth` wrapper adds one small benefit: it throws if used outside `AuthProvider`, catching a mis-mount early instead of at render time with a confusing null error.
+
+> 💡 中文要点：认证这种"全局、跨层"状态用 React Context 就够了 —— 70 行干掉 login/logout/register/refresh 四个动作 + 全局 user 状态。不需要 Redux/Zustand。`useAuth` 钩子还顺带检查"用在 Provider 外"的错误，早发现早改。
+
+- **The shape of `AuthContextValue` is the frontend's "auth contract".** Any page that wants to know the current user or trigger auth actions imports `AuthContextValue` and gets a typed surface. This is the type-safety mirror of the backend's `AuthController` — two sides of the same contract, both encoded in types, both verified at compile time. If `AuthUser` changes (say we add `avatarUrl`), every component using `user.avatarUrl` is flagged by `tsc` immediately.
+
+> 💡 中文要点：`AuthContextValue` 类型是前端侧的"认证契约"，跟后端 `AuthController` 对称。改一处类型，所有用到的组件都会被 TypeScript 当场报错 —— 契约式开发的好处。
+
 ---
 
-*Last updated: 2026-05-08 after Task 17 completion. Frontend now has BrowserRouter + Tailwind rendering. `npm run dev` shows the placeholder home page with Tailwind styles. Next entry: Task 18 — AuthContext + AuthProvider + useAuth.*
+*Last updated: 2026-05-08 after Task 18 completion. Auth state is now global via React Context. Next entry: Task 19 — ProtectedRoute + Navbar + wire AuthProvider into App.*
