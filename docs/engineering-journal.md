@@ -791,4 +791,4 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 20 completion. Home page and Me page are live; `/me` is now guarded by `ProtectedRoute`. Next entry: Task 21 — RegisterPage (first real form).*
+*Last updated: 2026-05-08 after Task 21 completion. Register page is live at `/register` with form validation and error display. Next entry: Task 22 — LoginPage (the teacher-demo milestone).*
