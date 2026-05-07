@@ -5,6 +5,7 @@ import nz.ac.waikato.campusmarketplace.exception.ApiException;
 import nz.ac.waikato.campusmarketplace.exception.ErrorCode;
 import nz.ac.waikato.campusmarketplace.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -40,7 +41,7 @@ public class AuthService {
                        RateLimitService rateLimit,
                        JwtService jwt,
                        EmailService email,
-                       String emailBaseUrl) {
+                       @Value("${app.email.base-url}") String emailBaseUrl) {
         this.users = users;
         this.encoder = encoder;
         this.rateLimit = rateLimit;
