@@ -362,6 +362,41 @@ Combined, these make the classic CSRF attack vector fail before it reaches our b
 
 ---
 
+### D-23 — Hand-built `Set-Cookie` header instead of `ResponseCookie` builder
+
+**Date / where** Task 13 — `AuthController.setTokenCookie / clearTokenCookie`
+**Choice** Build the `Set-Cookie` header as a string and call `res.addHeader("Set-Cookie", cookie)`.
+**Alternatives considered** Spring's `ResponseCookie.from(name, value)...build()` builder.
+**Rationale** The builder API does not always emit `SameSite` consistently across versions, and we want exact control over the attribute order and presence (important when debugging in browser DevTools where headers are matched literally). A 3-line `String.format` is more transparent than chaining 5 builder methods, and easy to grep when a cookie problem comes up. This is one of the few times "do it manually" beats "use the library" for a thesis project.
+**Trade-offs accepted** Slight risk of typos in attribute names. Mitigated by keeping it in one place (the helper methods) and by integration-testing the actual response header (Task 14).
+
+> 💡 中文要点：Cookie 的 `Set-Cookie` 头手写字符串拼接，不用 Spring 的 `ResponseCookie` 构建器。理由是构建器在 SameSite 等属性上版本间行为不太稳定；手写更透明，调试浏览器 DevTools 时所见即所得。
+
+---
+
+### D-24 — `clientIp` reads `X-Forwarded-For` first
+
+**Date / where** Task 13 — `AuthController.clientIp`
+**Choice** Try `X-Forwarded-For` header before falling back to `req.getRemoteAddr()`.
+**Rationale** When deployed behind a reverse proxy (nginx, Cloudflare, the VPS load balancer in our deployment plan), `getRemoteAddr()` returns the proxy's IP, not the real client's. The proxy injects the real IP via `X-Forwarded-For`. Reading the first comma-separated entry handles the proxy chain.
+**Trade-offs accepted** The `X-Forwarded-For` header is **trivially spoofable** if there's no proxy in front — anyone can set the header to any value. The rate limiter would key off the spoofed IP. Acceptable for the MVP because (a) rate limiting is a soft control, not a hard one, and (b) a hardening pass would later add a "trusted proxy" allow-list.
+
+> 💡 中文要点：拿客户端 IP 时优先看 `X-Forwarded-For`（反向代理会在这里塞真实 IP），fallback 才是 `req.getRemoteAddr()`。注意这个头**裸跑时可被伪造**——但 rate limit 是软防御，MVP 阶段可以接受。
+
+---
+
+### D-25 — DTOs as Java `record`s, not classes
+
+**Date / where** Task 13 — `RegisterRequest`, `LoginRequest`, etc.
+**Choice** All five request/response DTOs are declared as `record`s.
+**Alternatives considered** Lombok-decorated classes; plain POJOs with hand-written getters.
+**Rationale** Records (Java 16+) give you immutability, `equals`/`hashCode`/`toString`, and accessor methods for free in one line. They are also a *stronger signal* than a class: "this is a transport object with no behaviour and no mutation." Spring's Jackson and `@Valid` work with records out of the box.
+**Trade-offs accepted** Records can't have non-final fields (a feature, not a bug for DTOs). They also can't extend other classes — irrelevant here.
+
+> 💡 中文要点：DTO 全部用 Java `record`，一行就有不可变性 + equals + 自动 getter，比 class + Lombok 还简洁。Spring/Jackson 完全支持。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -507,4 +542,14 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 12 completion. Next entry: Task 13 — AuthController + DTOs (the demoable HTTP API).*
+- **The whole HTTP layer is a thin shell over services** — `AuthController` is ~100 lines but does almost no work. It deserialises JSON into a DTO, calls one `AuthService` method, serialises the result. No business logic. No validation. No persistence. This is the textbook "thin controller" pattern made concrete: when reading the controller, the reader can scan it as routing-only and trust that decisions live in the service layer. Achieved by Tasks 7–12 setting up the layers underneath.
+
+> 💡 中文要点：`AuthController` 100 行代码里几乎没有"逻辑"——它只做 JSON ↔ DTO ↔ Service 的搬运。"瘦 Controller、胖 Service" 在这一步真正变得具体。这是分层架构能落地的成果，不是说出来的。
+
+- **Backend API is now demoable in Postman** — Six endpoints (`/api/auth/{register,login,logout,me,forgot-password,reset-password}`) are wired end-to-end through filter, controller, service, repository, JPA, MySQL, Redis, JWT, BCrypt. This is the first checkpoint where the project can be shown to the teacher with a real interaction (filling a form in Postman, watching cookies appear, calling protected endpoints with the cookie). Marks the end of Phase A in the plan.
+
+> 💡 中文要点：后端 6 个 API 全部接通了 —— Filter → Controller → Service → Repository → MySQL/Redis 整条链路活了。这是第一个能用 Postman 给老师演示的节点（Phase A 完工）。
+
+---
+
+*Last updated: 2026-05-08 after Task 13 completion. Phase A backend foundation is feature-complete (13 tasks, 25 unit tests). Next entry: Task 14 — backend integration test, plus user-driven Postman demo.*
