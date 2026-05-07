@@ -288,6 +288,30 @@ These are deliberate design choices, not bugs. Each decision shaped the codebase
 
 ---
 
+### D-17 — `OncePerRequestFilter` instead of plain `Filter`
+
+**Date / where** Task 11 — `JwtAuthenticationFilter`
+**Choice** Extend Spring's `OncePerRequestFilter` rather than implement `jakarta.servlet.Filter` directly.
+**Alternatives considered** Implement the raw `Filter` interface; intercept at the controller level via a `HandlerInterceptor`.
+**Rationale** A single HTTP request can pass through the filter chain more than once in some Spring scenarios (forwards, error dispatches, async). `OncePerRequestFilter` guarantees the filter body runs **at most once per request**, which avoids double-parsing the token, double-writing the SecurityContext, etc. The base class also gives us the typed `HttpServletRequest`/`HttpServletResponse` instead of the raw `ServletRequest`.
+**Trade-offs accepted** None significant for our use case; this is the textbook recommendation for auth filters in Spring.
+
+> 💡 中文要点：用 Spring 的 `OncePerRequestFilter` 不用裸 `Filter`，因为同一个请求可能被分发多次（forward、error、async），基类保证我们这段逻辑**每个请求只跑一次**，不会重复解析 token。
+
+---
+
+### D-18 — Bad/expired token = empty SecurityContext, not an exception
+
+**Date / where** Task 11 — `catch (JwtException ignored)` branch
+**Choice** When the cookie contains a token that is malformed, expired, or tampered with, we silently swallow the parse exception and leave `SecurityContext` empty. The request continues down the filter chain as if no token were present.
+**Alternatives considered** Return 401 directly from the filter; clear the cookie via `Set-Cookie`.
+**Rationale** Authorisation decisions belong to Spring Security and the controller layer, not to the auth filter. The filter's job is "if there's a valid token, mark the request as authenticated; otherwise do nothing". Public endpoints (`/auth/register`, `/auth/login`, the health check) should still work even with a stale cookie. Spring Security will return 401 automatically on protected endpoints when no `Authentication` is present.
+**Trade-offs accepted** The user will see a 401 the next time they hit a protected endpoint and have to re-login, rather than getting an immediate 401 the moment their token expires. This is normal JWT UX.
+
+> 💡 中文要点：Token 解析失败时**不要**直接返回 401。Filter 的职责是"如果 token 有效就标记为已登录"，鉴权决策交给 Spring Security 和 Controller。这样公开接口（注册、登录）即使带着坏 cookie 也能照常工作。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -417,4 +441,10 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 10 completion. AuthService is feature-complete (4 methods + helpers, 19 unit tests). Next entry: Task 11 — JwtAuthenticationFilter.*
+- **The servlet filter chain is the place where "who is this?" becomes a concrete fact.** Controllers receive an already-authenticated request via `@AuthenticationPrincipal AuthPrincipal`; they never touch cookies or tokens themselves. This is the layered-architecture idea concretely: the filter does the one thing (cookie → principal), and the rest of the app sees only the result. Before Task 11 this was an abstract concept; seeing the filter plug into `SecurityContextHolder` made the layering click.
+
+> 💡 中文要点：Filter 是"把 Cookie 翻译成'这是谁'"的地方。Controller 只拿到结果（`AuthPrincipal`），不碰 cookie。分层架构在这里变得具体：每一层只做一件事。
+
+---
+
+*Last updated: 2026-05-08 after Task 11 completion. Next entry: Task 12 — SecurityConfig + CorsConfig.*
