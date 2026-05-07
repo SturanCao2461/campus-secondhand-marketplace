@@ -5,9 +5,6 @@ export function HomePage() {
       <p className="mt-2 text-slate-600">
         Buy and sell secondhand items with other University of Waikato students.
       </p>
-      <p className="mt-6 text-sm text-slate-500">
-        Listings will appear here once Epic 2 is complete.
-      </p>
     </div>
   )
 }
