@@ -730,4 +730,4 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 16 completion. Frontend now has a typed HTTP client. Next entry: Task 17 — React Router + first multi-page app rendering.*
+*Last updated: 2026-05-08 after Task 17 completion. Frontend now has BrowserRouter + Tailwind rendering. `npm run dev` shows the placeholder home page with Tailwind styles. Next entry: Task 18 — AuthContext + AuthProvider + useAuth.*
