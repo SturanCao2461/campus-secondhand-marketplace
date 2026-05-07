@@ -88,6 +88,56 @@ After this change `./mvnw -Dtest=RateLimitServiceTest test` reports `Tests run: 
 
 ---
 
+### Problem #2 — `AuthService` startup fails: "no qualifying bean of type `String`"
+
+| Field | Value |
+|---|---|
+| **Date** | 2026-05-08 |
+| **Task** | Task 13 — first time the application is fully wired and started end-to-end |
+| **Severity** | Blocker — application context refused to start |
+| **Time spent** | ~3 min from error to green start (the fix was a one-line annotation) |
+
+**Symptom**
+
+`./mvnw spring-boot:run` failed with:
+
+```
+APPLICATION FAILED TO START
+Description:
+  Parameter 5 of constructor in nz.ac.waikato.campusmarketplace.service.AuthService
+  required a bean of type 'java.lang.String' that could not be found.
+Action:
+  Consider defining a bean of type 'java.lang.String' in your configuration.
+```
+
+The 25 unit tests had been passing the entire time, because in tests the constructor was called manually with a literal string for `emailBaseUrl` (e.g. `"http://localhost:5173"`).
+
+**Root cause**
+
+The `AuthService` constructor declares `String emailBaseUrl` without any annotation. In tests we passed a literal; in production Spring's autowiring saw a constructor parameter of type `String` and tried to find a bean of type `String` to inject — there is no such bean (and conventionally never should be), hence the failure. The plan document called for `@Value("${app.email.base-url}")` on this parameter, but the annotation was missed when the constructor was first written in Task 7.
+
+**Fix**
+
+One-line change in `AuthService.java`:
+
+```java
+public AuthService(...,
+                   EmailService email,
+                   @Value("${app.email.base-url}") String emailBaseUrl) {
+```
+
+Plus the `import org.springframework.beans.factory.annotation.Value;`. The application started cleanly afterwards. All 25 unit tests still pass — they were never affected because they bypass Spring autowiring.
+
+**Lessons**
+
+- A unit-test green-light does *not* mean the application can start. Tests that construct the service directly skip Spring's wiring; the first end-to-end start is when missing `@Value` / `@Qualifier` annotations show up.
+- Spring's failure message on missing string injection is excellent: it names the offending parameter and class precisely. Reading those two lines is faster than guessing.
+- The matching `@Value("${app.email.base-url}")` had been present in the plan all along; this was a transcription miss, not a design issue. Always cross-check copied code against the source.
+
+> 💡 中文要点：Spring 报"找不到 `String` 类型的 bean"，原因是 `AuthService` 构造函数里的 `String emailBaseUrl` 没加 `@Value("${app.email.base-url}")`。单测用字面量 mock 不会触发，但 Spring 启动时要真的注入。一行注解修好。**单测全绿不代表能启动 —— 单测不走 Spring 装配。**
+
+---
+
 ## 2. Decision Log
 
 These are deliberate design choices, not bugs. Each decision shaped the codebase and is worth defending in the thesis "design choices" section.
