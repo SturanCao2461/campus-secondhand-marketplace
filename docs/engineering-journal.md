@@ -550,6 +550,27 @@ Catching by `e.message` is fragile (text changes break it); catching by `e.code`
 
 ---
 
+### D-34 — `ProtectedRoute` preserves the original URL via `?next=`
+
+**Date / where** Task 19 — `ProtectedRoute.tsx`
+**Choice** If the user isn't logged in, redirect to `/login?next=<encoded-original-path>`. After login, the login page reads `?next` and sends the user back where they came from.
+**Alternatives considered** Always redirect to `/` after login regardless of the original destination.
+**Rationale** If a user clicks a deep link "Check your message inbox" while logged out, the right UX is to send them back to that inbox after login, not dump them on the home page. URL-encoding the path handles query strings and special characters correctly.
+**Trade-offs accepted** Small attack surface — a malicious site could craft `/login?next=https://evil.com` to redirect after login. To mitigate, the login page (Task 22) must validate that `next` starts with `/` (same-origin only), not an absolute URL.
+
+> 💡 中文要点：未登录访问受保护页面时跳转到 `/login?next=<原路径>`，登录成功后跳回原处。要小心 `next` 参数的开放重定向攻击 —— 登录页必须验证它以 `/` 开头，不能是 `https://...`。
+
+---
+
+### D-35 — `ProtectedRoute` shows a loading state during the initial `/me` check
+
+**Date / where** Task 19 — `if (loading) return <div>Loading...</div>`
+**Rationale** When the app first loads, `AuthProvider` hasn't finished calling `/me` yet (`loading` is `true`). During this window, `user` is `null` but that doesn't mean "not logged in" — it means "we don't know yet". If `ProtectedRoute` immediately redirected to `/login`, an actually-logged-in user would see a quick flash of the login page before being bounced back to their destination. The explicit `loading` branch avoids that flicker.
+
+> 💡 中文要点：App 刚启动时 `/me` 还没回来，`user===null` 但意思是"还不知道"不是"未登录"。`ProtectedRoute` 要先显示 Loading 等待答案回来，否则已登录用户会看到"闪一下登录页又跳走"的糟糕体验。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -760,6 +781,14 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 > 💡 中文要点：`AuthContextValue` 类型是前端侧的"认证契约"，跟后端 `AuthController` 对称。改一处类型，所有用到的组件都会被 TypeScript 当场报错 —— 契约式开发的好处。
 
+- **Composition in action: `<BrowserRouter><AuthProvider><Navbar /><Routes /></AuthProvider></BrowserRouter>`.** The App component is now ~20 lines and composes four independent pieces: router (URL→component), auth provider (session state), navbar (UI that consumes auth), and routes (page tree). Each was written in a separate Task. The ordering matters: `AuthProvider` must be *inside* `BrowserRouter` because `Navbar.logout` uses `useNavigate()` which needs router context; `Navbar` must be *inside* `AuthProvider` because it calls `useAuth()`. Getting this right the first time is not luck — it's reading the API docs and understanding the nesting contract each provider declares.
+
+> 💡 中文要点：`App.tsx` 20 行代码组装 4 个独立组件：Router / AuthProvider / Navbar / Routes，**嵌套顺序很重要** —— AuthProvider 必须在 BrowserRouter 里面（因为要用 `useNavigate`），Navbar 必须在 AuthProvider 里面（因为要用 `useAuth`）。这是 Provider 模式的必修课。
+
+- **Two-state navbar is a common pattern; ternary rendering covers it cleanly.** `{user ? <LoggedInView /> : <LoggedOutView />}` — same ~20 lines of JSX handle both states. The *same* Navbar instance auto-swaps when auth state changes because it consumes `useAuth()`. Click "Log out" → `logout()` mutates context → React re-renders Navbar with `user === null` → you see "Log in" / "Sign up" again. No manual DOM work.
+
+> 💡 中文要点：Navbar 用 `{user ? 已登录视图 : 未登录视图}` 三目表达式切换。点"登出"后 Context 更新，Navbar 自动重渲染变回"登录/注册"按钮 —— **React 声明式渲染的力量**，不用自己操作 DOM。
+
 ---
 
-*Last updated: 2026-05-08 after Task 18 completion. Auth state is now global via React Context. Next entry: Task 19 — ProtectedRoute + Navbar + wire AuthProvider into App.*
+*Last updated: 2026-05-08 after Task 19 completion. App shell is fully wired: navbar reacts to auth state, protected-route guard is available. Next entry: Task 20 — HomePage + MePage.*
