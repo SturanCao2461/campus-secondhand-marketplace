@@ -447,6 +447,20 @@ Combined, these make the classic CSRF attack vector fail before it reaches our b
 
 ---
 
+### D-26 — Defer custom `AuthenticationEntryPoint` (401 vs 403 cosmetic)
+
+**Date / where** Task 13 manual demo, 2026-05-08
+**Observation** When an unauthenticated request hits a protected endpoint (e.g. `/api/auth/me` after logout), Spring Security's default `AuthenticationEntryPoint` returns **403 Forbidden** instead of the more semantically correct **401 Unauthorized**.
+**Why this happens** Spring Security's filter chain rejects the request *before* it reaches our controller. Our controller method has `if (principal == null) throw ApiException(UNAUTHENTICATED)`, but that code never executes because Spring Security's `.authenticated()` rule fires first and the default entry point returns 403.
+**Choice** Leave it as 403 for now; do not add a custom `AuthenticationEntryPoint` in Task 13.
+**Alternatives considered** Add an `AuthenticationEntryPoint` that delegates to `GlobalExceptionHandler` so all auth failures use our standard `ApiErrorResponse` format with a 401 status.
+**Rationale** The behaviour proves the access control works (the user *is* locked out). The status code mismatch is cosmetic for a thesis MVP. Adding this in Task 14 (integration tests) is cleaner because the same test will assert the exact response shape.
+**Trade-offs accepted** API consumers see two different error shapes (Spring's default for security blocks, our `ApiErrorResponse` for service-thrown errors). To be unified before any production launch.
+
+> 💡 中文要点：登出后访问 `/me` 返回 403 不是 401 —— 这是 Spring Security 默认行为（Filter 层就拒了，没机会走到我们的 Controller）。**功能上没问题**，状态码语义稍偏。Task 14 集成测试时一起加自定义 `AuthenticationEntryPoint` 修这个细节。
+
+---
+
 ## 3. Tooling & Dependencies
 
 A snapshot of what is in the project as of 2026-05-08, with the reason each item is there. Versions are read from the actual lockfiles, not memory.
@@ -602,4 +616,22 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 13 completion. Phase A backend foundation is feature-complete (13 tasks, 25 unit tests). Next entry: Task 14 — backend integration test, plus user-driven Postman demo.*
+- **Demo moment #1: Postman walk-through of all 6 endpoints (2026-05-08).** With the backend started locally against the docker-compose MySQL/Redis, every flow was exercised by hand:
+  1. `GET /api/health` → 200 OK
+  2. `POST /api/auth/register` → 201 Created with the new user
+  3. `POST /api/auth/login` → 200 OK with `Set-Cookie: token=...; HttpOnly; SameSite=Lax`
+  4. `GET /api/auth/me` → 200 OK (cookie auto-sent by Postman, filter parsed it, controller returned the user)
+  5. `POST /api/auth/logout` → 204 No Content with `Set-Cookie: token=; Max-Age=0`
+  6. `GET /api/auth/me` after logout → 403 Forbidden (see D-26)
+  7. `POST /api/auth/forgot-password` → 204 No Content; `ConsoleEmailService` printed the reset email to the backend terminal
+  8. `POST /api/auth/reset-password` with the captured token → 200 OK with `{"ok": true}`
+  9. Re-login with the **old** password → 401 BAD_CREDENTIALS (proving rotation worked)
+  10. Re-login with the **new** password → 200 OK
+  11. Replaying the same reset-password request → 400 INVALID_TOKEN (proving D-15 single-use enforcement)
+  This sequence is the demoable evidence that Phase A is complete. It exercises every layer (controller → filter → security config → service → repository → MySQL → Redis → email) in a single user-driven session. Worth recording verbatim as a runbook in the thesis appendix.
+
+> 💡 中文要点：2026-05-08 用 Postman 手把手跑通了 6 个端点的全套流程（注册 → 登录 → /me → 登出 → 忘密 → 重置 → 旧密码失败 → 新密码成功 → token 不能复用），整条 Phase A 端到端在一次会话里被验证。这个 11 步流水可以原样进论文附录当 demo 脚本。
+
+---
+
+*Last updated: 2026-05-08 after Task 13 manual demo. Phase A backend foundation is feature-complete and verified end-to-end. Next entry: Task 14 — backend integration test (will also fold in the 401-vs-403 fix from D-26).*
