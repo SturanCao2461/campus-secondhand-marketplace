@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../api/apiClient'
+import { PasswordInput } from '../components/PasswordInput'
 
 export function RegisterPage() {
   const { register } = useAuth()
@@ -53,25 +54,21 @@ export function RegisterPage() {
         </Field>
 
         <Field label="Password" hint="8-64 characters with at least one letter and one digit">
-          <input
-            type="password"
+          <PasswordInput
             required
             minLength={8}
             maxLength={64}
             value={password}
             onChange={e => setPassword(e.target.value)}
-            className={inputCls}
             autoComplete="new-password"
           />
         </Field>
 
         <Field label="Confirm Password">
-          <input
-            type="password"
+          <PasswordInput
             required
             value={confirm}
             onChange={e => setConfirm(e.target.value)}
-            className={inputCls}
             autoComplete="new-password"
           />
         </Field>
