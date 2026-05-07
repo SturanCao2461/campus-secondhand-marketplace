@@ -360,4 +360,4 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 8 completion. Next entry: Task 9 — AuthService.getCurrentUser.*
+*Last updated: 2026-05-08 after Task 9 completion. Next entry: Task 10 — forgot password + reset password.*
