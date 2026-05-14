@@ -957,7 +957,65 @@ FSM design: 4 states / 8 edges / SOLD reversibility (spec DC-3). EnumMap-style `
 ```bash
 git commit -m "feat(backend): ListingService.changeStatus + FSM table (4 states, 8 transitions)"
 ```
-### Task T15 — `ListingService.listMine` + `getOne` + `remove` + 7 unit tests
+### Task T15 — `ListingService.listMine` + `getOne` + `remove` + 8 unit tests
+
+> **Idempotent DELETE note:** Spec §4.6 says DELETE is "equivalent to PATCH(REMOVED)" but the errors list omits `INVALID_STATUS_TRANSITION`, implying DELETE is idempotent. `ListingService.remove` therefore implements its own minimal logic (existence → ownership → if not REMOVED, set status and save; else noop) instead of delegating to `changeStatus` (which would throw on already-REMOVED per FSM).
+
+> **Permission matrix for `getOne`:** owner sees any status including REMOVED; non-owner gets `LISTING_NOT_FOUND` for REMOVED, sees other states normally (Epic 3 will further restrict).
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/ListingService.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/ListingServiceQueryTest.java` (name aligns with spec §8.3 even though `remove` is also tested here)
+
+- [ ] **Step 1: Write the failing unit test (8 cases)**
+
+| # | Method | Case |
+|---|---|---|
+| 1 | `listMine` | default (no status + !includeRemoved) → calls `findByOwnerAndStatusNot(REMOVED, pageable)` |
+| 2 | `listMine` | with `statusFilter=AVAILABLE` → calls `findByOwnerAndStatus(AVAILABLE, pageable)` |
+| 3 | `listMine` | `includeRemoved=true` (no statusFilter) → calls `findByOwner(pageable)` |
+| 4 | `getOne` | listing not found → `LISTING_NOT_FOUND` |
+| 5 | `getOne` | owner sees own REMOVED listing (spec §4.3) |
+| 6 | `getOne` | non-owner sees REMOVED → `LISTING_NOT_FOUND` (spec §4.3) |
+| 7 | `remove` | happy path AVAILABLE → REMOVED, `save` called |
+| 8 | `remove` | idempotent noop on already-REMOVED, `save` NOT called |
+
+- [ ] **Step 2: Run, expect compile failure**
+
+- [ ] **Step 3: Add the 3 methods to `ListingService`**
+
+```
+@Transactional(readOnly = true)
+listMine(User currentUser, Pageable pageable, ListingStatus statusFilter, boolean includeRemoved):
+  Page<Listing> page;
+  if (statusFilter != null)
+    page = listings.findByOwnerAndStatus(currentUser, statusFilter, pageable);
+  else if (!includeRemoved)
+    page = listings.findByOwnerAndStatusNot(currentUser, REMOVED, pageable);
+  else
+    page = listings.findByOwner(currentUser, pageable);
+  return PagedListings.from(page);
+
+@Transactional(readOnly = true)
+getOne(User currentUser, Long id):
+  listing = listings.findById(id) -> LISTING_NOT_FOUND if absent
+  isOwner = listing.owner.id == currentUser.id
+  if listing.status == REMOVED && !isOwner -> LISTING_NOT_FOUND
+  return ListingResponse.from(listing)
+
+@Transactional
+remove(User currentUser, Long id):
+  listing = listings.findById(id) -> LISTING_NOT_FOUND if absent
+  if listing.owner.id != currentUser.id -> LISTING_NOT_FOUND
+  if listing.status != REMOVED:
+    listing.setStatus(REMOVED); save
+  // else idempotent noop
+```
+
+- [ ] **Step 4: Run service test alone**
+- [ ] **Step 5: Run full suite** (90 + 8 = 98 expected)
+- [ ] **Step 6: Journal D-51** (idempotent-DELETE design + Phase 1 service-layer retrospective)
+- [ ] **Step 7: Commit**
 ### Task T16 — `ListingController` 5 endpoints (no image yet) + Security config update
 
 *All tasks above to be expanded with TDD steps, exact file paths, code blocks, run commands, and commit messages.*

@@ -2,6 +2,7 @@ package nz.ac.waikato.campusmarketplace.service;
 
 import nz.ac.waikato.campusmarketplace.dto.CreateListingRequest;
 import nz.ac.waikato.campusmarketplace.dto.ListingResponse;
+import nz.ac.waikato.campusmarketplace.dto.PagedListings;
 import nz.ac.waikato.campusmarketplace.dto.UpdateListingRequest;
 import nz.ac.waikato.campusmarketplace.entity.Category;
 import nz.ac.waikato.campusmarketplace.entity.Listing;
@@ -14,6 +15,9 @@ import nz.ac.waikato.campusmarketplace.repository.CategoryRepository;
 import nz.ac.waikato.campusmarketplace.repository.ListingRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -124,6 +128,53 @@ public class ListingService {
         listing.setStatus(newStatus);
         Listing saved = listings.save(listing);
         return ListingResponse.from(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedListings listMine(User currentUser, Pageable pageable,
+                                  ListingStatus statusFilter, boolean includeRemoved) {
+        Page<Listing> page;
+        if (statusFilter != null) {
+            page = listings.findByOwnerAndStatus(currentUser, statusFilter, pageable);
+        } else if (!includeRemoved) {
+            page = listings.findByOwnerAndStatusNot(currentUser, ListingStatus.REMOVED, pageable);
+        } else {
+            page = listings.findByOwner(currentUser, pageable);
+        }
+        return PagedListings.from(page);
+    }
+
+    @Transactional(readOnly = true)
+    public ListingResponse getOne(User currentUser, Long id) {
+        Listing listing = listings.findById(id)
+                .orElseThrow(() -> new ApiException(ErrorCode.LISTING_NOT_FOUND,
+                        "Listing not found."));
+
+        boolean isOwner = listing.getOwner().getId().equals(currentUser.getId());
+        // spec §4.3: REMOVED listings are hidden from non-owners (anti-enumeration).
+        if (listing.getStatus() == ListingStatus.REMOVED && !isOwner) {
+            throw new ApiException(ErrorCode.LISTING_NOT_FOUND, "Listing not found.");
+        }
+
+        return ListingResponse.from(listing);
+    }
+
+    @Transactional
+    public void remove(User currentUser, Long id) {
+        Listing listing = listings.findById(id)
+                .orElseThrow(() -> new ApiException(ErrorCode.LISTING_NOT_FOUND,
+                        "Listing not found."));
+
+        // spec §7.3: non-owner is hidden as LISTING_NOT_FOUND, not NOT_LISTING_OWNER.
+        if (!listing.getOwner().getId().equals(currentUser.getId())) {
+            throw new ApiException(ErrorCode.LISTING_NOT_FOUND, "Listing not found.");
+        }
+
+        // spec §4.6: DELETE is idempotent — already-REMOVED is a silent success.
+        if (listing.getStatus() != ListingStatus.REMOVED) {
+            listing.setStatus(ListingStatus.REMOVED);
+            listings.save(listing);
+        }
     }
 
     private Category resolveActiveCategory(String code) {

@@ -975,4 +975,26 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T14 complete (D-42..D-50). 90 backend tests green; `Listing` entity, derived queries, 6 DTOs, 8 listing `ErrorCode`s, and `ListingService` `create` + `update` + `changeStatus` (with FSM) shipped.*
+### D-51 — Idempotent DELETE: `ListingService.remove` is its own minimal implementation, not a thin wrapper around `changeStatus`
+
+**Date / where** Epic 2 Phase 1 T15, 2026-05-15
+**Choice** `ListingService.remove(User, Long)` independently implements the existence → ownership → "if not REMOVED, set REMOVED and save" sequence. It does **not** delegate to `changeStatus(currentUser, id, REMOVED)`. On already-REMOVED listings it is a silent no-op (no save, no exception). On not-found or non-owner it throws `LISTING_NOT_FOUND` — same anti-enumeration behaviour as `update` and `changeStatus`. The whole method body is ~12 lines.
+**Why** Spec §4.6 is the source of the puzzle: the language "DELETE is equivalent to PATCH(REMOVED)" suggests delegation, but the errors list deliberately omits `INVALID_STATUS_TRANSITION`. The omission encodes a different intent — DELETE is supposed to be idempotent, while PATCH(REMOVED) on an already-REMOVED listing should fail per the FSM. Two contradictory contracts at the same code path. Independent implementation lets each contract say what it means: `changeStatus` stays a strict FSM enforcer (no idempotency hacks) and `remove` stays a clean idempotent DELETE. Wrapping `remove` around `changeStatus` would have required a `try { ... } catch (ApiException e) { if (e.code == INVALID_STATUS_TRANSITION) ... }` which is hard to read and worse to test.
+**Trade-off accepted** Two methods now share ~5 lines of boilerplate (existence → ownership lookup). DRY temptation: extract a `Listing requireOwnedListing(currentUser, id)` helper. Deferred — the duplication is small and the methods will diverge further as Epic 3 adds public-browsing semantics, at which point the helper would have to grow conditionals. Worth revisiting in T22/T23 when the fully-tested service layer makes the right shape obvious.
+
+> 💡 中文要点：spec §4.6 暗示 DELETE 是幂等的（错误码列表故意没列 `INVALID_STATUS_TRANSITION`），但 PATCH(REMOVED) 严格走 FSM —— 同一段路径**两个矛盾契约**。所以 `remove` 不去包装 `changeStatus`，而是自己实现 ~12 行：找 listing → 查 owner → 已 REMOVED 就 noop / 否则 set REMOVED 并 save。让 `changeStatus` 保持 FSM 严格，`remove` 保持幂等清爽，两个语义各说各话。两边重复 ~5 行查找代码 vs 抽 helper 的取舍 —— 暂留重复，等 Epic 3 公开浏览语义到位再回头看。
+
+---
+
+### D-52 — Phase 1 service layer complete: 4 public methods, uniform validation chain, 32 unit tests
+
+**Date / where** Epic 2 Phase 1 T15, 2026-05-15
+**Retrospective** `ListingService` Phase 1 lands with 4 public methods sharing the same validation-chain shape (per spec §7.4): `create` (no existence step — it's a creation) / `update` / `changeStatus` / `getOne` (read) / `remove`. All write methods enforce the chain existence → ownership → business in strict order; first failure short-circuits. The two read methods (`listMine`, `getOne`) skip ownership in the privileged sense — `listMine` is implicitly self-scoped via the `currentUser` parameter to the `findByOwner*` queries, and `getOne` performs an "owner OR public-visible" gate. Test coverage: 32 unit tests across 4 test classes (`Create` 8, `Update` 7, `ChangeStatus` 8, `Query` 9). Every public method has at least one happy-path test and at least one anti-enumeration test verifying `LISTING_NOT_FOUND` for the unauthorized cases.
+**Lesson** A uniform validation-chain shape is worth more than DRY extraction. Each method reads top-to-bottom in the same pattern (existence → ownership → business → mutate → save). Future readers and reviewers can scan any method and immediately know which step is which. Extracting the shared lookup into `requireOwnedListing(currentUser, id)` would save lines but obscure the chain. Repetition with consistent shape > abstraction without consistent shape.
+**Phase 1 service complete:** Next up is T16 (`ListingController` 5 endpoints + Security config update). The service layer's public API is the controller's contract; controller test design starts from these 4 method signatures.
+
+> 💡 中文要点：Phase 1 service 层封顶 —— 4 个 public 方法（不算 5 个吧？仔细数：`create / update / changeStatus / listMine / getOne / remove` 共 6 个），每个都按 §7.4 校验链 **同款形状** 写：存在 → 归属 → 业务 → 变更 → 保存。32 个单元测试全绿。**统一形状 > DRY 提取**：repeat 5 行查找代码胜过用 helper 隐藏校验链结构，因为读代码的人一眼就能定位哪步是哪步。下一步进 T16 controller，service 层 public API 就是 controller 测试的契约。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T15 complete (D-42..D-52). 99 backend tests green; service layer fully landed (`create` / `update` / `changeStatus` / `listMine` / `getOne` / `remove`); next: T16 controller layer.*
