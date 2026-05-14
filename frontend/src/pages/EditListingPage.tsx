@@ -3,10 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { listingsApi, type Listing, type ListingType, type Condition } from '../api/listings'
 import { categoriesApi, type Category } from '../api/categories'
 import { ApiError } from '../api/apiClient'
+import { useToast } from '../components/Toast'
 
 export function EditListingPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const toast = useToast()
   const [listing, setListing] = useState<Listing | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
   const [error, setError] = useState('')
@@ -63,6 +65,7 @@ export function EditListingPage() {
 
     try {
       await listingsApi.update(listing.id, multipart)
+      toast.success('Changes saved!')
       navigate(`/listings/${listing.id}`)
     } catch (err) {
       if (err instanceof ApiError) setError(err.message)

@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { listingsApi, type Listing, type ListingStatus } from '../api/listings'
 import { ApiError } from '../api/apiClient'
+import { useToast } from '../components/Toast'
 
 export function ListingDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const toast = useToast()
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -31,6 +33,7 @@ export function ListingDetailPage() {
     try {
       const updated = await listingsApi.changeStatus(listing.id, newStatus)
       setListing(updated)
+      toast.success(`Status changed to ${newStatus}`)
     } catch (err) {
       if (err instanceof ApiError) setActionError(err.message)
     }
@@ -40,6 +43,7 @@ export function ListingDetailPage() {
     if (!listing || !confirm('Are you sure you want to remove this listing?')) return
     try {
       await listingsApi.remove(listing.id)
+      toast.success('Listing removed')
       navigate('/listings/mine')
     } catch (err) {
       if (err instanceof ApiError) setActionError(err.message)

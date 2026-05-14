@@ -1,15 +1,22 @@
-import { useState, useEffect, type FormEvent } from 'react'
+import { useState, useEffect, useRef, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listingsApi, type ListingType, type Condition } from '../api/listings'
 import { categoriesApi, type Category } from '../api/categories'
 import { ApiError } from '../api/apiClient'
+import { useToast } from '../components/Toast'
+import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard'
 
 export function CreateListingPage() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [categories, setCategories] = useState<Category[]>([])
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const formRef = useRef<HTMLFormElement>(null)
+
+  useUnsavedChangesGuard(dirty && !submitting)
 
   useEffect(() => {
     categoriesApi.list().then(r => setCategories(r.items)).catch(() => {})
@@ -48,6 +55,8 @@ export function CreateListingPage() {
 
     try {
       await listingsApi.create(multipart)
+      setDirty(false)
+      toast.success('Listing created!')
       navigate('/listings/mine')
     } catch (err) {
       if (err instanceof ApiError) {
@@ -65,7 +74,7 @@ export function CreateListingPage() {
     <main className="max-w-2xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Create Listing</h1>
       {error && <p className="text-red-600 mb-4">{error}</p>}
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" onChange={() => setDirty(true)} ref={formRef}>
         <div>
           <label className="block text-sm font-medium mb-1">Title *</label>
           <input name="title" required maxLength={80}

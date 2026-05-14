@@ -64,9 +64,15 @@ export function MyListingsPage() {
 
       {!loading && !error && data && data.items.length === 0 && (
         <div className="text-center py-12 text-gray-500">
+          <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+          </svg>
           <p className="text-lg mb-2">No listings yet</p>
-          <Link to="/listings/new" className="text-blue-600 hover:underline">
-            Create your first listing
+          <p className="text-sm mb-4">Start selling by creating your first listing</p>
+          <Link to="/listings/new"
+            className="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+            + Create Listing
           </Link>
         </div>
       )}
