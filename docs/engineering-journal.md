@@ -829,4 +829,27 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 24 completion. Epic 1 auth is fully implemented, tested, and manually verified end-to-end. All routes wired, all 36 backend tests green, frontend production build clean. Ready to move to Epic 2.*
+### D-38 — `Retry-After` header on rate-limit responses + TTL-aware `RateLimitService.check`
+
+**Date / where** Epic 2 Phase 0, 2026-05-14
+**Choice** `ApiException` carries an optional `retryAfterSeconds`. `GlobalExceptionHandler` emits the `Retry-After` HTTP header when present. `RateLimitService.check()` returns a `RateLimitDecision(boolean exceeded, long retryAfterSeconds)` record so callers can populate the field. Legacy `exceeded()` boolean retained as a thin delegate.
+**Why** Industry standard for `429 Too Many Requests` is to include `Retry-After` so clients can implement intelligent retry instead of polling blind. The TTL-aware decision is the cheapest way to surface this — Redis already tracks the key TTL via `EXPIRE`; one `TTL` call recovers it. AuthService's two rate-limit call sites (login + register) were migrated to throw with the populated retry-after.
+**Trade-off accepted** `exceeded()` boolean API is kept compiling for any future external caller, but production code (AuthService) now uses `check()` exclusively. Slated for removal once verified no other consumers depend on the boolean form.
+
+> 💡 中文要点：限流响应不只返回 429，还要给客户端 `Retry-After` 头告诉它"还有多少秒可以再来"。`RateLimitService.check()` 拿 Redis 的 TTL 当 retry-after，Epic 1 已经有 EXPIRE 写入所以 0 额外成本。前端可据此做指数退避——工业标准做法。
+
+---
+
+### D-39 — Mockito default-value lesson: stub `RateLimitService.check()` in `@BeforeEach`
+
+**Date / where** Epic 2 Phase 0 T3, 2026-05-14
+**Symptom** After migrating `AuthService` from `rateLimit.exceeded()` (returns `boolean`) to `rateLimit.check()` (returns `RateLimitDecision`), seven previously-green unit tests started failing with `NullPointerException` instead of the expected `ApiException`.
+**Root cause** When a mocked method returns a *reference type* (here `RateLimitDecision`), Mockito's default is `null` — not a sensible zero-value record. So `rateLimit.check(...)` returned `null`, and `decision.exceeded()` blew up. With the old boolean API, Mockito's default `false` happened to be correct for unrelated tests.
+**Fix** Add `when(rateLimit.check(any(), any(Long.class), any())).thenReturn(RateLimitDecision.allowed());` to each test's `@BeforeEach`. Specific tests still override with `RateLimitDecision.blocked(...)` as needed.
+**Lesson** Whenever you replace a mock's primitive-returning method with a reference-returning one, **every test must be checked** — primitives have safe defaults (false/0); references default to null and detonate downstream.
+
+> 💡 中文要点：把 `mock` 方法的返回类型从 `boolean` 改成对象（`RateLimitDecision`）时，Mockito 默认返 `null` 而不是"零值对象"——后续调 `.exceeded()` 当场 NPE。改契约后必须在 `@BeforeEach` 里加一行默认 stub（返 `allowed()`）。**基础类型有安全默认值，对象没有**——这是迁移返回类型的隐藏陷阱。
+
+---
+
+*Last updated: 2026-05-14 — Epic 2 Phase 0 complete (D-38, D-39). 44 backend tests green; `Retry-After` header now emitted on rate-limit responses.*
