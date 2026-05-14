@@ -880,12 +880,89 @@ The 404-as-403 anti-enumeration decision in a write operation: same principle as
 git commit -m "feat(backend): ListingService.update with 404-as-403 anti-enumeration for non-owner edits"
 ```
 ### Task T14 — `ListingService.changeStatus` + FSM table + 8 unit tests
+
+> **FSM source of truth:** Spec DC-3 (4 states, 8 legal edges, REMOVED is terminal, SOLD is reversible). Implementation as `private static final Map<ListingStatus, Set<ListingStatus>> ALLOWED_TRANSITIONS` on `ListingService`. Self-transitions (e.g. `AVAILABLE → AVAILABLE`) are illegal — not listed in the table. Idempotency for repeat-DELETE is solved later at the controller layer (T16), not the service.
+
+> **Anti-enumeration carry-over:** Same as T13 — listing-not-found and non-owner both return `LISTING_NOT_FOUND`. `LISTING_REMOVED` is *not* used here; `REMOVED → anything` falls under `INVALID_STATUS_TRANSITION` because the FSM forbids it (spec §4.5 errors list confirms this — no `LISTING_REMOVED` listed).
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/ListingService.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/ListingServiceChangeStatusTest.java`
+
+- [ ] **Step 1: Write the failing unit test (8 cases)**
+
+Same Mockito + `mock()` static + JUnit-standard assertions style. Mock `ListingRepository`; capture saved entity for happy paths; verify `never()` save for error paths.
+
+| # | Type | Case |
+|---|---|---|
+| 1 | happy | AVAILABLE → RESERVED |
+| 2 | happy | RESERVED → SOLD |
+| 3 | happy | SOLD → AVAILABLE (spec DC-3 reversibility) |
+| 4 | happy | AVAILABLE → REMOVED |
+| 5 | error | listing not found → LISTING_NOT_FOUND |
+| 6 | error | non-owner → LISTING_NOT_FOUND (anti-enumeration) |
+| 7 | error | REMOVED → AVAILABLE → INVALID_STATUS_TRANSITION (terminal) |
+| 8 | error | self-transition AVAILABLE → AVAILABLE → INVALID_STATUS_TRANSITION |
+
+The remaining 4 happy edges (AVAILABLE→SOLD, RESERVED→AVAILABLE, RESERVED→REMOVED, SOLD→REMOVED) are covered by integration tests in T22/T23 and demo milestone #6.
+
+- [ ] **Step 2: Run test, expect compile failure**
+
+```bash
+./mvnw -Dtest=ListingServiceChangeStatusTest test
+```
+Expected: COMPILE FAIL — `changeStatus` method doesn't exist.
+
+- [ ] **Step 3: Add `changeStatus` to `ListingService`**
+
+```
+private static final Map<ListingStatus, Set<ListingStatus>> ALLOWED_TRANSITIONS =
+    Map.of(
+        AVAILABLE, Set.of(RESERVED, SOLD, REMOVED),
+        RESERVED,  Set.of(AVAILABLE, SOLD, REMOVED),
+        SOLD,      Set.of(AVAILABLE, REMOVED),
+        REMOVED,   Set.of()
+    );
+
+@Transactional
+changeStatus(User currentUser, Long id, ListingStatus newStatus) -> ListingResponse:
+  1. listings.findById(id):
+       empty -> throw LISTING_NOT_FOUND
+  2. listing.owner.id != currentUser.id -> throw LISTING_NOT_FOUND
+  3. !ALLOWED_TRANSITIONS.get(listing.status).contains(newStatus)
+       -> throw INVALID_STATUS_TRANSITION
+  4. listing.setStatus(newStatus); save; return ListingResponse.from
+```
+
+- [ ] **Step 4: Run service unit test**
+
+```bash
+./mvnw -Dtest=ListingServiceChangeStatusTest test
+```
+Expected: PASS — 8/8 green.
+
+- [ ] **Step 5: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 82 + 8 = 90 tests green.
+
+- [ ] **Step 6: Append D-50 to engineering journal**
+
+FSM design: 4 states / 8 edges / SOLD reversibility (spec DC-3). EnumMap-style `Map.of(...)` chosen over if/else chain for direct table-to-code correspondence. Brief retrospective on the three `ListingService` public methods sharing the same validation chain shape (existence → ownership → business).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git commit -m "feat(backend): ListingService.changeStatus + FSM table (4 states, 8 transitions)"
+```
 ### Task T15 — `ListingService.listMine` + `getOne` + `remove` + 7 unit tests
 ### Task T16 — `ListingController` 5 endpoints (no image yet) + Security config update
 
 *All tasks above to be expanded with TDD steps, exact file paths, code blocks, run commands, and commit messages.*
 
-**Demo milestone #6:** Postman walks the 5 endpoints — create (no image yet), list, get one, change status (all 7 legal transitions), delete.
+**Demo milestone #6:** Postman walks the 5 endpoints — create (no image yet), list, get one, change status (all 8 legal transitions per spec DC-3), delete.
 
 ---
 

@@ -16,9 +16,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class ListingService {
+
+    private static final Map<ListingStatus, Set<ListingStatus>> ALLOWED_TRANSITIONS = Map.of(
+            ListingStatus.AVAILABLE, Set.of(ListingStatus.RESERVED, ListingStatus.SOLD, ListingStatus.REMOVED),
+            ListingStatus.RESERVED,  Set.of(ListingStatus.AVAILABLE, ListingStatus.SOLD, ListingStatus.REMOVED),
+            ListingStatus.SOLD,      Set.of(ListingStatus.AVAILABLE, ListingStatus.REMOVED),
+            ListingStatus.REMOVED,   Set.of()
+    );
 
     private final CategoryRepository categories;
     private final ListingRepository listings;
@@ -91,6 +100,28 @@ public class ListingService {
             listing.setImagePath(newImagePath);
         }
 
+        Listing saved = listings.save(listing);
+        return ListingResponse.from(saved);
+    }
+
+    @Transactional
+    public ListingResponse changeStatus(User currentUser, Long id, ListingStatus newStatus) {
+        Listing listing = listings.findById(id)
+                .orElseThrow(() -> new ApiException(ErrorCode.LISTING_NOT_FOUND,
+                        "Listing not found."));
+
+        // spec §7.3 / §7.4: non-owner is hidden as LISTING_NOT_FOUND, not NOT_LISTING_OWNER.
+        if (!listing.getOwner().getId().equals(currentUser.getId())) {
+            throw new ApiException(ErrorCode.LISTING_NOT_FOUND, "Listing not found.");
+        }
+
+        Set<ListingStatus> allowed = ALLOWED_TRANSITIONS.get(listing.getStatus());
+        if (allowed == null || !allowed.contains(newStatus)) {
+            throw new ApiException(ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Cannot change status from " + listing.getStatus() + " to " + newStatus + ".");
+        }
+
+        listing.setStatus(newStatus);
         Listing saved = listings.save(listing);
         return ListingResponse.from(saved);
     }

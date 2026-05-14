@@ -964,4 +964,15 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T13 complete (D-42..D-49). 82 backend tests green; `Listing` entity, derived queries, 6 DTOs, 8 listing `ErrorCode`s, and `ListingService.create` + `update` (with anti-enumeration) shipped.*
+### D-50 — Listing FSM as a `Map<ListingStatus, Set<ListingStatus>>` table; three service methods now share a uniform validation chain
+
+**Date / where** Epic 2 Phase 1 T14, 2026-05-15
+**Choice** The 4-state / 8-edge listing FSM (spec DC-3) lives as a `private static final Map<ListingStatus, Set<ListingStatus>> ALLOWED_TRANSITIONS` literal on `ListingService`, populated via `Map.of(...)`. Each entry maps a state to the *set* of states it can transition to. The terminal `REMOVED` maps to an empty set. `changeStatus(currentUser, id, newStatus)` reads the table once: `ALLOWED_TRANSITIONS.get(listing.status).contains(newStatus)`. Self-transitions (e.g. `AVAILABLE → AVAILABLE`) are illegal because the table never lists them. With this addition, the three public methods on `ListingService` (`create`, `update`, `changeStatus`) now share the same validation-chain shape: existence → ownership → business rules.
+**Why** Three reasons the table-of-sets representation beats the alternatives. (1) **Direct correspondence with the spec.** The DC-3 markdown table has rows for from-states and a list of allowed to-states; the Java literal mirrors that 1:1 — anyone reading the spec can verify the implementation by visual diff. (2) **No state-transition logic spreads.** A nested `if/switch` chain encoding 8 transitions invariably fragments the FSM across many lines and tempts subtle differences ("oh, RESERVED → REMOVED also requires X"). The table is *just* the rules. (3) **Idempotency is settled at one place.** Self-transitions are illegal because the table omits them. If we ever decide DELETE-on-already-REMOVED should silently succeed, that idempotency lives in the controller (T16), not the service — keeping the service's contract pure.
+**Trade-off accepted** `Map.of(...)` is unmodifiable but the inner `Set.of(...)` is also unmodifiable. We're paying for two layers of immutability per state. The alternative (mutable `EnumMap` + `EnumSet`) would be slightly faster but allow accidental mutation. At < 10 entries this is invisible. Worth a passing note that if the FSM grows to dozens of states + edges, a separate `FsmTable` value class with explicit `enforce(from, to)` semantics would be the next step.
+
+> 💡 中文要点：状态机 4 状态 / 8 边用 `Map<from, Set<to>>` 一张表搞定（`ALLOWED_TRANSITIONS`），跟 spec DC-3 的 markdown 表 **一行对一行** 对应。可视化对比就能验证实现。**自身转换是非法**因为表里就没列。三个 service 方法（`create` / `update` / `changeStatus`）现在共享同款校验链结构：存在性 → 归属 → 业务规则。重复 DELETE 已 REMOVED listing 的"幂等性"放 T16 controller 处理，不污染 service 契约。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T14 complete (D-42..D-50). 90 backend tests green; `Listing` entity, derived queries, 6 DTOs, 8 listing `ErrorCode`s, and `ListingService` `create` + `update` + `changeStatus` (with FSM) shipped.*
