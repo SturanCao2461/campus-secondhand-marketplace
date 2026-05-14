@@ -57,9 +57,11 @@ public class AuthService {
 
     @Transactional
     public User register(String rawEmail, String password, String nickname, String ip) {
-        if (rateLimit.exceeded("ratelimit:register:" + ip, 3, Duration.ofHours(1))) {
+        RateLimitDecision regDecision = rateLimit.check("ratelimit:register:" + ip, 3, Duration.ofHours(1));
+        if (regDecision.exceeded()) {
             throw new ApiException(ErrorCode.TOO_MANY_REGISTRATIONS,
-                    "Too many registrations from your network. Try again later.");
+                    "Too many registrations from your network. Try again later.",
+                    regDecision.retryAfterSeconds());
         }
         String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase();
         validateEmail(email);
@@ -86,9 +88,11 @@ public class AuthService {
     public LoginResult login(String rawEmail, String password) {
         String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase();
         String key = "ratelimit:login:" + email;
-        if (rateLimit.exceeded(key, 5, Duration.ofMinutes(15))) {
+        RateLimitDecision loginDecision = rateLimit.check(key, 5, Duration.ofMinutes(15));
+        if (loginDecision.exceeded()) {
             throw new ApiException(ErrorCode.TOO_MANY_ATTEMPTS,
-                    "Too many attempts. Try again in 15 minutes.");
+                    "Too many attempts. Try again in 15 minutes.",
+                    loginDecision.retryAfterSeconds());
         }
         User u = users.findByEmail(email).orElse(null);
         if (u == null || !encoder.matches(password, u.getPassword())) {

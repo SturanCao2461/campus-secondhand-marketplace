@@ -39,6 +39,7 @@ class AuthServiceLoginLogoutTest {
         users = mock(UserRepository.class);
         encoder = new BCryptPasswordEncoder();
         rateLimit = mock(RateLimitService.class);
+        when(rateLimit.check(any(), any(Long.class), any())).thenReturn(RateLimitDecision.allowed());
         jwt = mock(JwtService.class);
         redis = mock(StringRedisTemplate.class);
         valueOps = mock(ValueOperations.class);
@@ -87,11 +88,12 @@ class AuthServiceLoginLogoutTest {
 
     @Test
     void loginBlockedWhenRateLimitExceeded() {
-        when(rateLimit.exceeded(eq("ratelimit:login:a@students.waikato.ac.nz"), eq(5L), any()))
-                .thenReturn(true);
+        when(rateLimit.check(eq("ratelimit:login:a@students.waikato.ac.nz"), eq(5L), any()))
+                .thenReturn(RateLimitDecision.blocked(900L));
         ApiException ex = assertThrows(ApiException.class,
                 () -> auth.login("a@students.waikato.ac.nz", "Pass1234"));
         assertEquals(ErrorCode.TOO_MANY_ATTEMPTS, ex.getCode());
+        assertEquals(900L, ex.getRetryAfterSeconds());
     }
 
     @Test
