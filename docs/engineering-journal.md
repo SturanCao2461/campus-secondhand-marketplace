@@ -829,4 +829,233 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-08 after Task 24 completion. Epic 1 auth is fully implemented, tested, and manually verified end-to-end. All routes wired, all 36 backend tests green, frontend production build clean. Ready to move to Epic 2.*
+### D-38 — `Retry-After` header on rate-limit responses + TTL-aware `RateLimitService.check`
+
+**Date / where** Epic 2 Phase 0, 2026-05-14
+**Choice** `ApiException` carries an optional `retryAfterSeconds`. `GlobalExceptionHandler` emits the `Retry-After` HTTP header when present. `RateLimitService.check()` returns a `RateLimitDecision(boolean exceeded, long retryAfterSeconds)` record so callers can populate the field. Legacy `exceeded()` boolean retained as a thin delegate.
+**Why** Industry standard for `429 Too Many Requests` is to include `Retry-After` so clients can implement intelligent retry instead of polling blind. The TTL-aware decision is the cheapest way to surface this — Redis already tracks the key TTL via `EXPIRE`; one `TTL` call recovers it. AuthService's two rate-limit call sites (login + register) were migrated to throw with the populated retry-after.
+**Trade-off accepted** `exceeded()` boolean API is kept compiling for any future external caller, but production code (AuthService) now uses `check()` exclusively. Slated for removal once verified no other consumers depend on the boolean form.
+
+> 💡 中文要点：限流响应不只返回 429，还要给客户端 `Retry-After` 头告诉它"还有多少秒可以再来"。`RateLimitService.check()` 拿 Redis 的 TTL 当 retry-after，Epic 1 已经有 EXPIRE 写入所以 0 额外成本。前端可据此做指数退避——工业标准做法。
+
+---
+
+### D-39 — Mockito default-value lesson: stub `RateLimitService.check()` in `@BeforeEach`
+
+**Date / where** Epic 2 Phase 0 T3, 2026-05-14
+**Symptom** After migrating `AuthService` from `rateLimit.exceeded()` (returns `boolean`) to `rateLimit.check()` (returns `RateLimitDecision`), seven previously-green unit tests started failing with `NullPointerException` instead of the expected `ApiException`.
+**Root cause** When a mocked method returns a *reference type* (here `RateLimitDecision`), Mockito's default is `null` — not a sensible zero-value record. So `rateLimit.check(...)` returned `null`, and `decision.exceeded()` blew up. With the old boolean API, Mockito's default `false` happened to be correct for unrelated tests.
+**Fix** Add `when(rateLimit.check(any(), any(Long.class), any())).thenReturn(RateLimitDecision.allowed());` to each test's `@BeforeEach`. Specific tests still override with `RateLimitDecision.blocked(...)` as needed.
+**Lesson** Whenever you replace a mock's primitive-returning method with a reference-returning one, **every test must be checked** — primitives have safe defaults (false/0); references default to null and detonate downstream.
+
+> 💡 中文要点：把 `mock` 方法的返回类型从 `boolean` 改成对象（`RateLimitDecision`）时，Mockito 默认返 `null` 而不是"零值对象"——后续调 `.exceeded()` 当场 NPE。改契约后必须在 `@BeforeEach` 里加一行默认 stub（返 `allowed()`）。**基础类型有安全默认值，对象没有**——这是迁移返回类型的隐藏陷阱。
+
+---
+
+### D-40 — `GET /api/categories` ships the read side of the listing taxonomy
+
+**Date / where** Epic 2 Phase 1 T7, 2026-05-15
+**Choice** A single read-only endpoint `GET /api/categories` returns `{ "items": [{ code, nameEn, nameZh } …] }`, ordered by `sortOrder` ascending, filtered to `active=true`. The shape — wrapping the array in an `items` key rather than returning a bare array — matches the existing `PagedListings` contract and leaves headroom for cursor or filter metadata later without breaking clients.
+**Why** The frontend `CreateListingPage` will call this once at mount to populate the category `<select>`. Categories are bilingual (`nameEn` / `nameZh`) per the design spec — supplying both fields lets the frontend pick its render language without a second roundtrip. Sorting in the database (via `findAllByActiveTrueOrderBySortOrderAsc`) keeps the controller a pure mapper, and the `active` flag gives operations a way to retire a category without DELETEing rows referenced by historical listings.
+**Trade-off accepted** Endpoint is unauthenticated-rejected (`/api/**` → `authenticated()` in `SecurityConfig`). Anonymous users — including teacher-demo browser sessions before login — cannot prefetch categories. The alternative (adding `/api/categories` to `permitAll`) was rejected to keep the auth boundary simple: every read of business data sits behind login.
+
+> 💡 中文要点：分类接口设计三个细节值得记：①响应包一层 `{ "items": […] }`，给后续加分页/筛选元数据留空间；②`nameEn` + `nameZh` 双语字段一次返回，让前端按 i18n 自取其一；③`active` 软删除字段保留历史 listing 的外键完整性。`sortOrder ASC` 排序在 DB 层做，Controller 只做 entity→DTO 映射，3 行代码。
+
+---
+
+### D-41 — Testcontainers singleton pattern fixes the cross-class context-cache crash
+
+**Date / where** Epic 2 Phase 1 T7, 2026-05-15
+**Symptom** `CategoryControllerIntegrationTest` passed in isolation but threw `CannotCreateTransactionException: HikariPool-2 - Connection is not available` (root cause: `Connection refused at 0ms`) when run after `AuthControllerIntegrationTest` in the same `./mvnw test` invocation.
+**Root cause** `AbstractIntegrationTest` used `@Testcontainers` + `@Container` (JUnit 5 lifecycle): each subclass started a fresh MySQL/Redis pair on its own random port and stopped them at class teardown. Spring's `TestContext` framework, however, *cached* the `ApplicationContext` across both test classes (matching `@SpringBootTest` config + dynamic properties). Sequence: Auth class started container A, cached context X pointing at A:port-A. Auth class finished → container A stopped. Category class loaded → Spring matched context X from cache → DataSource still pointing at the dead port-A → connection refused 30s later. Single-class runs avoided the bug because no subsequent class ever needed the dead container.
+**Fix** Switched to the [Testcontainers singleton pattern](https://www.testcontainers.org/test_framework_integration/manual_lifecycle_control/#singleton-containers): removed `@Testcontainers`/`@Container`, declared `static final` containers, and started them in a `static {}` block. JVM-scoped lifecycle. Containers boot once at class loading time, are reused across all IT classes, and ryuk cleans them at JVM exit. Runtime dropped from 121s → 23s on the full suite as a side effect.
+**Lesson** Two test-framework concerns silently disagree about lifecycle: `@Container` says "die at class end"; `@SpringBootTest` says "cache contexts across the suite". When they collide on a shared resource (the JDBC URL), the cache wins and points at corpses. The singleton pattern aligns both to JVM scope so they cannot disagree. Watch for any test infrastructure that conflates "lifecycle of *this* class's setup" with "lifecycle of resources that downstream classes depend on" — they should be the same scope or the failure surfaces only when class count > 1.
+
+> 💡 中文要点：Testcontainers + Spring 测试有个隐藏陷阱：`@Container` 注解按"测试类生命周期"关容器，但 Spring `TestContext` 跨类**缓存** ApplicationContext。第一个类跑完关掉容器，第二个类复用 context，里头 DataSource 指向死端口 → `Connection refused`。**根治**：用 singleton 容器模式（`static {}` 启动，永不 stop），把容器对齐到 JVM 生命周期。这次顺带把测试套件从 2 分钟降到 23 秒，因为 mysql + redis 启动只发生一次。
+
+---
+
+### D-42 — `Listing` entity ships with 4 indexes baked in, `condition` backtick gotcha, schema verified via `information_schema`
+
+**Date / where** Epic 2 Phase 1 T8, 2026-05-15
+**Choice** `Listing` is a single JPA entity carrying all 16 columns (id, owner FK, title, description, price, original_price, category FK, image_path, status, listing_type, condition, meet_at, negotiable, reason_for_selling, created_at/updated_at/deleted_at). Both relationships use `@ManyToOne(fetch = LAZY)`. The 4 indexes — `idx_listings_owner`, `idx_listings_status`, `idx_listings_created`, `idx_listings_image` — are declared up-front via `@Index` annotations on `@Table`, even though only "My Listings" needs the owner index in this Epic.
+**Why** Index strategy is read-driven: `idx_listings_owner` covers `WHERE owner_id = ?` (My Listings page); `idx_listings_status` covers Epic 3's public list `WHERE status = 'AVAILABLE'`; `idx_listings_created` supports the universal `ORDER BY created_at DESC` sort; `idx_listings_image` is non-obvious — it backs the §7.5 image-access owner check `WHERE image_path = ?`. Creating all four now avoids a later `ALTER TABLE` migration on a populated production table. Adding an index to a small empty table is free; adding it later requires careful coordination.
+**Trade-off accepted** Pre-creating Epic 3's index now means the categories.id and owner_id FKs each get *two* indexes — Hibernate auto-creates one for the FK constraint, and we explicitly named another for read patterns. MySQL won't merge them, costing ~16 bytes/row of disk. At thesis-project scale (~1000 listings expected) this is invisible. At industrial scale you'd drop the explicit index and rely on the FK auto-index, accepting the auto-generated index name.
+
+> 💡 中文要点：4 个索引一次到位的策略：①`owner_id`（"我的发布"页面）；②`status`（Epic 3 的公开列表）；③`created_at`（默认排序）；④`image_path`（图片访问的归属校验，spec §7.5）。**第 4 个最不直观但最关键** —— 没有它，每次取图都要全表扫描验证归属。空表加索引零成本，上线后再加要协调迁移，所以提前建。
+
+---
+
+### D-43 — `condition` is a MySQL reserved word; column name needs backtick quoting in `@Column(name = "\`condition\`")`
+
+**Date / where** Epic 2 Phase 1 T8, 2026-05-15
+**Symptom** A naive `@Column(name = "condition")` would have produced syntax errors when Hibernate generated `CREATE TABLE … condition VARCHAR(20) …` because MySQL reserves `CONDITION` for stored-procedure flow control.
+**Fix** Wrap the column name in backticks at the JPA annotation level: `@Column(name = "\`condition\`")`. Hibernate passes the literal string through to the DDL emitter, which preserves the backticks. Raw JDBC reads must use the same backtick form: ``SELECT `condition` FROM listings WHERE id = ?``.
+**Lesson** When a domain word collides with a SQL reserved word, keep the Java field name natural (here, `condition` is the most readable choice for "item condition") and pay the price at one layer — the `@Column` annotation. Don't rename the Java field to dodge the reservation; the readability tax is permanent and infectious. Backticks stay localized to two places: the entity annotation and any raw SQL that reads the column.
+
+> 💡 中文要点：`condition` 是 MySQL 保留字（用于存储过程的流程控制）。Java 字段名想用 `condition` 时只需在 `@Column(name = "\`condition\`")` 加反引号即可，让 Hibernate 把反引号原样写进 DDL。不要为绕开保留字而改 Java 字段名 —— 可读性损失永久存在，反引号只本地化到两处（注解和原生 SQL）。
+
+---
+
+### D-44 — Verify generated schema with `information_schema.statistics`, not by round-tripping rows
+
+**Date / where** Epic 2 Phase 1 T8, 2026-05-15
+**Symptom** When `ddl-auto=update` generates the schema, "did Hibernate emit the index I declared?" is a real question. Round-tripping a row checks the table exists and columns persist, but it does **not** verify that named indexes were actually created — you only notice missing indexes years later when a query plan does a full table scan.
+**Choice** Two-pronged schema integration test: ①`SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'listings'` confirms the table exists; ②`SELECT DISTINCT index_name FROM information_schema.statistics WHERE table_name = 'listings'` and assert `containsAll` of the four named indexes. The third and fourth tests do a row-level round-trip to verify column types, defaults, and `@Enumerated(EnumType.STRING)` persistence (not ordinal).
+**Lesson** When schema is a *side effect* of code (JPA `ddl-auto`) rather than an artifact (Flyway), tests must assert the side effect directly. `information_schema` is the cheapest, most direct probe: structural questions get structural answers. Functional behavior (round-trip) cannot substitute for structural assertions about the schema you intended to declare.
+
+> 💡 中文要点：schema 由 `ddl-auto=update` 生成意味着"我写的 `@Index` 真的进了数据库吗？"是个**必须验证**的问题——光靠"存进去再读出来"测不到索引存不存在。最直接的查法是 `information_schema.statistics`：表名+索引名一目了然。结构性的问题就要用结构性的查询去验证，不要拿功能性的往返当替代。
+
+---
+
+### D-45 — JPA tests need `@Transactional` to safely traverse `LAZY` associations
+
+**Date / where** Epic 2 Phase 1 T8, 2026-05-15
+**Symptom** The first `findById` round-trip test threw `org.hibernate.LazyInitializationException: Could not initialize proxy [Category#1] - no session` when calling `loaded.getCategory().getCode()`. The Listing came back fine; touching the lazy `category` proxy after the repository call had returned was the trigger.
+**Root cause** `@SpringBootTest` does not start a transaction around test methods by default. JpaRepository methods open a transaction internally, complete, and close it. The returned entity carries `@ManyToOne(fetch=LAZY)` proxies that need an active session to resolve. Outside the repository call's transaction, those proxies are detached and any access fails.
+**Fix** Annotate the test class with `@Transactional`. Each test method runs inside a transaction, the session stays open for its duration, lazy proxies resolve transparently. Spring Boot tests default to auto-rollback at method end, so this also gives free per-method data isolation.
+**Lesson** "Repository call returns the entity" is *not* the same as "the entity is fully usable forever." LAZY associations carry a hidden contract — they need a session. Production service code is `@Transactional` by default, so the contract is invisible there. Tests that mimic service-layer access must opt into the same transactional scope, or restrict assertions to fields that don't trigger LAZY load.
+
+> 💡 中文要点：JPA 集成测试访问 `@ManyToOne(fetch=LAZY)` 关系前必须给测试类加 `@Transactional`。仓库方法返回实体后事务就关了，LAZY proxy 失去 session，触发 `LazyInitializationException`。生产 service 代码自带 `@Transactional` 所以看不到这个坑——测试要复刻同款上下文才能覆盖到 LAZY 字段。Spring 测试加 `@Transactional` 顺带还有自动回滚 = 每方法数据隔离的好处。
+
+---
+
+### D-46 — `ListingRepository` derived queries: method-name DSL covers all 4 patterns without a single `@Query`
+
+**Date / where** Epic 2 Phase 1 T9, 2026-05-15
+**Choice** Four derived queries handle every read pattern Phase 1 needs: `findByOwner(User, Pageable)`, `findByOwnerAndStatus(User, ListingStatus, Pageable)`, `findByOwnerAndStatusNot(User, ListingStatus, Pageable)`, and `findByImagePath(String) → Optional<Listing>`. All are pure Spring Data method-name parsing — no `@Query`, no `Specification`, no QueryDSL. The `Pageable` parameter on the first three carries page index, page size, and sort, so the controller layer can map `?page=`, `?size=`, `?sort=` directly without translation logic.
+**Why** Method names *are* the contract. `findByOwnerAndStatusNot(owner, REMOVED, ...)` is self-documenting in a way that a `@Query("SELECT l FROM Listing l WHERE l.owner = ?1 AND l.status <> ?2")` is not. When a future maintainer reads the repository, they see the available reads without skipping into JPQL. The DSL also forces a small, finite vocabulary — if a future query cannot fit the keyword grammar, that is a signal the read is doing too much and probably belongs in a service-layer aggregate, not a repository method.
+**Trade-off accepted** `findByImagePath` returns `Optional<Listing>` despite `image_path` not having a DB UNIQUE constraint. Multiple matches would throw `IncorrectResultSizeDataAccessException`. This is fail-loud-by-design: business logic generates UUID v4 filenames, so a collision indicates a bug worth crashing for, not a normal case to handle. Adding a UNIQUE constraint at the DB level would be belt-and-braces — deferred until image upload (T19) lands so we can assert the invariant in one place rather than two.
+
+> 💡 中文要点：4 个查询全靠 Spring Data 方法名 DSL 解析，零 `@Query`。`findByOwnerAndStatusNot` 这种"否定"关键字也认。`Pageable` 参数把 page/size/sort 三件事一次打包，controller 层不用做参数翻译。`findByImagePath` 返 `Optional` 而非 `List` 是有意 fail-loud 设计：UUID 撞文件名 = 业务 bug，应该崩而不是兜底。
+
+---
+
+### D-47 — Listing DTOs: image-URL prefix lives in the DTO factory; `PagedListings` is a custom record, not Spring's `Page<>`
+
+**Date / where** Epic 2 Phase 1 T11, 2026-05-15
+**Choice** Six DTOs as Java `record` per the Epic 1 precedent. Two design points worth recording. (1) `ListingResponse.from(Listing)` and `ListingSummary.from(Listing)` build the public-facing `imageUrl` by prepending `"/api/uploads/"` to the entity's `imagePath` — this is the single source of truth for that URL shape. (2) `PagedListings` is a hand-rolled `record(List<ListingSummary> items, int page, int pageSize, int totalPages, long totalItems)` populated by a static `from(Page<Listing>)` factory, instead of returning Spring Data's `Page<>` directly to the controller.
+**Why** (1) The relative `imagePath` (e.g. `"listings/abc-123.jpg"`) is what the DB and `LocalImageStorageService` agree on; the URL prefix is a transport-layer concern that belongs at the boundary. Keeping the prefix concatenation inside the DTO factory means *one* file owns the rule. If we later move from `/api/uploads/` to a CDN URL, that's one edit. If 12 controller methods each prepended the prefix inline, we'd be playing whack-a-mole. (2) Spring's `Page<>` JSON serializes with field names that don't match the spec contract (`number` vs `page`, `content` vs `items`, plus a noisy `pageable` object). Returning `Page<>` directly leaks Spring's internal shape into the public API and pins the wire format to whatever Jackson decides about Spring's class. A purpose-built record gives the frontend exactly the contract `spec §6.3` declared.
+**Trade-off accepted** `CreateListingRequest` and `UpdateListingRequest` have identical components today. Keeping them as separate types adds boilerplate but preserves the controller-signature distinction (`PUT /api/listings/{id}` clearly takes an "update" intent, not a "create") and gives a place for divergence (e.g. partial updates) without a downstream refactor.
+
+> 💡 中文要点：DTO 工厂方法 (`from(entity)`) 里干两件 boundary 转换：①`imagePath` → `imageUrl` 加 `/api/uploads/` 前缀（**单点**真理，未来换 CDN 就改一处）；②Spring 的 `Page<>` 用 `number/content` 字段名，跟 spec 期望的 `page/items` 不符——自定义 `PagedListings` record 把契约钉死，避免内部分页类泄漏到 API 表面。`Create/Update` Request 字段相同也写两个 record，给未来差异化留口子。
+
+---
+
+### D-48 — `ListingService.create` takes `imagePath` from day one; all 8 listing `ErrorCode`s land together
+
+**Date / where** Epic 2 Phase 1 T12, 2026-05-15
+**Choice** `ListingService.create(User currentUser, CreateListingRequest req, String imagePath)` is the day-one signature. Phase 1's T16 controller will pass a placeholder string (`"listings/placeholder.jpg"`); Phase 2's T19 will replace that with `imageStorage.store(file)`. The service layer is *blind* to whether the path is a placeholder or a real upload — it just persists the string. Separately, all 8 listing `ErrorCode` values from spec §4.0 (`LISTING_NOT_FOUND`, `NOT_LISTING_OWNER`, `INVALID_STATUS_TRANSITION`, `LISTING_REMOVED`, `INVALID_CATEGORY`, `INVALID_IMAGE`, `MISSING_IMAGE`, `INVALID_PRICE`) were added to `ErrorCode.java` in this commit, even though only `INVALID_CATEGORY` and `INVALID_PRICE` are used in T12.
+**Why** *(imagePath in signature)*: stable APIs across phase boundaries are cheaper than refactors. If T16 used a 2-arg `create(User, CreateListingRequest)` and T19 had to retrofit a third parameter, every existing test, every controller call site, and the service contract itself would shift. Phase 2 adds *what fills the parameter*, not the parameter itself. *(All ErrorCodes together)*: enum edits surface in code review as "you touched this file again" noise. One commit defines the universe of listing errors, and downstream tasks (T13 / T14 / T15 / T17) reference codes that already exist. Removes 4 tiny commits whose only diff would be one line each.
+**Trade-off accepted** Adding 6 unused enum values is technically dead code. They are loaded into `ErrorCode`'s constant pool with no consumer until later tasks. The cost is invisible (one-time JVM cost, < 1 KB of class file). The benefit is enum cohesion: the file reads as a single domain vocabulary statement rather than an ad-hoc grow-as-you-go list.
+
+> 💡 中文要点：Service 方法签名要"跨阶段稳定"——`create(User, CreateListingRequest, String imagePath)` 第三参先用占位字符串顶着，等 Phase 2 的 ImageStorageService 上来再让 controller 传真实路径。Service 不关心来路是占位还是上传，只持久化字符串。**枚举一次性建满**也是同款思想：8 个 ListingErrorCode 一起进 enum，下游 task 直接 reference 现成符号，免去 4 次"改一行 enum"的零碎 commit。代价仅一次 JVM 加载 < 1 KB，换来 enum 文件的语义内聚。
+
+---
+
+### D-49 — Anti-enumeration in write paths: non-owner edits return `404 LISTING_NOT_FOUND`, never `403`
+
+**Date / where** Epic 2 Phase 1 T13, 2026-05-15
+**Choice** `ListingService.update` returns `LISTING_NOT_FOUND` (HTTP 404) in two distinct cases: (a) the id does not exist in the DB, and (b) the id exists but the authenticated user is not the owner. The two failure responses are byte-for-byte identical. `NOT_LISTING_OWNER` (HTTP 403) is reserved for client-side preconditions and a future admin view; the public API in Epic 2 never emits it. Spec §7.4 mandates the validation chain order — existence → ownership → status → business rules — so the two indistinguishable failures appear at the same checkpoint with the same response shape.
+**Why** Same anti-enumeration rationale as Epic 1 D-11 / D-14 / D-16, but this is the first time the project applies it to a *write* operation rather than a read. If 404 and 403 differed for write paths too, an attacker scanning ids could distinguish "this id is unused" from "this id exists, owned by someone else". The latter is a leak — it reveals that the id is *taken*, which when combined with timing or other side channels can reveal listing existence beyond what the API meant to expose. Preserving the same 404 shape across both unauthorized read and unauthorized write closes the side channel.
+**Trade-off accepted** Legitimate users who fat-finger the id of someone else's listing get a confusing "Listing not found" error instead of "Not your listing." This is a UX cost — but writes are typically initiated from the owner's listing list, so the wrong-id case is exotic. Frontend never *constructs* an arbitrary id to PUT; it only acts on listings it already enumerated via `GET /api/listings/me`. The error message is therefore mostly a defensive fallback the user shouldn't reach.
+
+> 💡 中文要点：写路径上的反枚举跟读路径同款—— 非 owner 改人家的 listing 也返 `404 LISTING_NOT_FOUND` 而不是 `403 NOT_LISTING_OWNER`。**两种失败响应字节级一致**：要么这个 id 根本没人用，要么有人用但不是你的，攻击者扫 id 时分不出来。代价：用户不小心输错 id 会看到"未找到"提示而不是"不是你的"。但写操作通常都是从"我的 listing"列表点出来的，正常用户走不到这条路径——是防御性兜底，不是常规 UX 路径。
+
+---
+
+### D-50 — Listing FSM as a `Map<ListingStatus, Set<ListingStatus>>` table; three service methods now share a uniform validation chain
+
+**Date / where** Epic 2 Phase 1 T14, 2026-05-15
+**Choice** The 4-state / 8-edge listing FSM (spec DC-3) lives as a `private static final Map<ListingStatus, Set<ListingStatus>> ALLOWED_TRANSITIONS` literal on `ListingService`, populated via `Map.of(...)`. Each entry maps a state to the *set* of states it can transition to. The terminal `REMOVED` maps to an empty set. `changeStatus(currentUser, id, newStatus)` reads the table once: `ALLOWED_TRANSITIONS.get(listing.status).contains(newStatus)`. Self-transitions (e.g. `AVAILABLE → AVAILABLE`) are illegal because the table never lists them. With this addition, the three public methods on `ListingService` (`create`, `update`, `changeStatus`) now share the same validation-chain shape: existence → ownership → business rules.
+**Why** Three reasons the table-of-sets representation beats the alternatives. (1) **Direct correspondence with the spec.** The DC-3 markdown table has rows for from-states and a list of allowed to-states; the Java literal mirrors that 1:1 — anyone reading the spec can verify the implementation by visual diff. (2) **No state-transition logic spreads.** A nested `if/switch` chain encoding 8 transitions invariably fragments the FSM across many lines and tempts subtle differences ("oh, RESERVED → REMOVED also requires X"). The table is *just* the rules. (3) **Idempotency is settled at one place.** Self-transitions are illegal because the table omits them. If we ever decide DELETE-on-already-REMOVED should silently succeed, that idempotency lives in the controller (T16), not the service — keeping the service's contract pure.
+**Trade-off accepted** `Map.of(...)` is unmodifiable but the inner `Set.of(...)` is also unmodifiable. We're paying for two layers of immutability per state. The alternative (mutable `EnumMap` + `EnumSet`) would be slightly faster but allow accidental mutation. At < 10 entries this is invisible. Worth a passing note that if the FSM grows to dozens of states + edges, a separate `FsmTable` value class with explicit `enforce(from, to)` semantics would be the next step.
+
+> 💡 中文要点：状态机 4 状态 / 8 边用 `Map<from, Set<to>>` 一张表搞定（`ALLOWED_TRANSITIONS`），跟 spec DC-3 的 markdown 表 **一行对一行** 对应。可视化对比就能验证实现。**自身转换是非法**因为表里就没列。三个 service 方法（`create` / `update` / `changeStatus`）现在共享同款校验链结构：存在性 → 归属 → 业务规则。重复 DELETE 已 REMOVED listing 的"幂等性"放 T16 controller 处理，不污染 service 契约。
+
+---
+
+### D-51 — Idempotent DELETE: `ListingService.remove` is its own minimal implementation, not a thin wrapper around `changeStatus`
+
+**Date / where** Epic 2 Phase 1 T15, 2026-05-15
+**Choice** `ListingService.remove(User, Long)` independently implements the existence → ownership → "if not REMOVED, set REMOVED and save" sequence. It does **not** delegate to `changeStatus(currentUser, id, REMOVED)`. On already-REMOVED listings it is a silent no-op (no save, no exception). On not-found or non-owner it throws `LISTING_NOT_FOUND` — same anti-enumeration behaviour as `update` and `changeStatus`. The whole method body is ~12 lines.
+**Why** Spec §4.6 is the source of the puzzle: the language "DELETE is equivalent to PATCH(REMOVED)" suggests delegation, but the errors list deliberately omits `INVALID_STATUS_TRANSITION`. The omission encodes a different intent — DELETE is supposed to be idempotent, while PATCH(REMOVED) on an already-REMOVED listing should fail per the FSM. Two contradictory contracts at the same code path. Independent implementation lets each contract say what it means: `changeStatus` stays a strict FSM enforcer (no idempotency hacks) and `remove` stays a clean idempotent DELETE. Wrapping `remove` around `changeStatus` would have required a `try { ... } catch (ApiException e) { if (e.code == INVALID_STATUS_TRANSITION) ... }` which is hard to read and worse to test.
+**Trade-off accepted** Two methods now share ~5 lines of boilerplate (existence → ownership lookup). DRY temptation: extract a `Listing requireOwnedListing(currentUser, id)` helper. Deferred — the duplication is small and the methods will diverge further as Epic 3 adds public-browsing semantics, at which point the helper would have to grow conditionals. Worth revisiting in T22/T23 when the fully-tested service layer makes the right shape obvious.
+
+> 💡 中文要点：spec §4.6 暗示 DELETE 是幂等的（错误码列表故意没列 `INVALID_STATUS_TRANSITION`），但 PATCH(REMOVED) 严格走 FSM —— 同一段路径**两个矛盾契约**。所以 `remove` 不去包装 `changeStatus`，而是自己实现 ~12 行：找 listing → 查 owner → 已 REMOVED 就 noop / 否则 set REMOVED 并 save。让 `changeStatus` 保持 FSM 严格，`remove` 保持幂等清爽，两个语义各说各话。两边重复 ~5 行查找代码 vs 抽 helper 的取舍 —— 暂留重复，等 Epic 3 公开浏览语义到位再回头看。
+
+---
+
+### D-52 — Phase 1 service layer complete: 4 public methods, uniform validation chain, 32 unit tests
+
+**Date / where** Epic 2 Phase 1 T15, 2026-05-15
+**Retrospective** `ListingService` Phase 1 lands with 4 public methods sharing the same validation-chain shape (per spec §7.4): `create` (no existence step — it's a creation) / `update` / `changeStatus` / `getOne` (read) / `remove`. All write methods enforce the chain existence → ownership → business in strict order; first failure short-circuits. The two read methods (`listMine`, `getOne`) skip ownership in the privileged sense — `listMine` is implicitly self-scoped via the `currentUser` parameter to the `findByOwner*` queries, and `getOne` performs an "owner OR public-visible" gate. Test coverage: 32 unit tests across 4 test classes (`Create` 8, `Update` 7, `ChangeStatus` 8, `Query` 9). Every public method has at least one happy-path test and at least one anti-enumeration test verifying `LISTING_NOT_FOUND` for the unauthorized cases.
+**Lesson** A uniform validation-chain shape is worth more than DRY extraction. Each method reads top-to-bottom in the same pattern (existence → ownership → business → mutate → save). Future readers and reviewers can scan any method and immediately know which step is which. Extracting the shared lookup into `requireOwnedListing(currentUser, id)` would save lines but obscure the chain. Repetition with consistent shape > abstraction without consistent shape.
+**Phase 1 service complete:** Next up is T16 (`ListingController` 5 endpoints + Security config update). The service layer's public API is the controller's contract; controller test design starts from these 4 method signatures.
+
+> 💡 中文要点：Phase 1 service 层封顶 —— 4 个 public 方法（不算 5 个吧？仔细数：`create / update / changeStatus / listMine / getOne / remove` 共 6 个），每个都按 §7.4 校验链 **同款形状** 写：存在 → 归属 → 业务 → 变更 → 保存。32 个单元测试全绿。**统一形状 > DRY 提取**：repeat 5 行查找代码胜过用 helper 隐藏校验链结构，因为读代码的人一眼就能定位哪步是哪步。下一步进 T16 controller，service 层 public API 就是 controller 测试的契约。
+
+---
+
+### D-53 — `ListingController` wiring: AuthPrincipal → User reference, sort string at the boundary, placeholder imagePath
+
+**Date / where** Epic 2 Phase 1 T16, 2026-05-15
+**Choice** `ListingController` exposes 6 endpoints that wrap the 6 `ListingService` public methods. Three wiring choices worth recording. (1) `@AuthenticationPrincipal AuthPrincipal principal` arrives from the JWT filter; `users.getReferenceById(principal.userId())` materializes a JPA entity reference without a `SELECT`, since the service only uses `currentUser.getId()` for FK association and ownership checks. (2) The frontend's sort vocabulary (`CREATED_DESC` / `CREATED_ASC` / `PRICE_DESC` / `PRICE_ASC`) is mapped to Spring's `Sort` at the controller boundary by a private `mapSort(String)` switch — service methods stay `Pageable`-pure. (3) `POST /api/listings` passes a hardcoded `imagePath = "listings/placeholder.jpg"`; `PUT` passes `newImagePath = null`. T19 (Phase 2) will replace these with `imageStorage.store(file)` results. The service signature stays stable across the boundary.
+**Why** *(getReferenceById)* The alternative — `users.findById(principal.userId()).orElseThrow()` — costs an extra DB roundtrip on every authenticated listing endpoint. With JWT auth ratifying the token and the service only needing the FK id, the `SELECT` is wasted I/O. *(sort at boundary)* If the service knew about `"CREATED_DESC"` strings, it would be tied to the frontend's vocabulary; future channels (admin tools, GraphQL) would have to either parrot those strings or duplicate the mapping. Boundary translation lives in one place. *(placeholder imagePath)* Stability of the service contract across phases is a deliberate Phase-1 design decision (see D-48). T19's image upgrade then becomes purely a controller-layer change.
+**Trade-off accepted** SecurityConfig was *not* updated despite spec §7.7 prescribing it: Epic 1's existing `.requestMatchers("/api/**").authenticated()` already covers `/api/listings/**`. The spec was written without checking the actual configuration, so the prescribed update is redundant. Worth a note here so a future reader of spec §7.7 doesn't expect to find a corresponding diff.
+
+> 💡 中文要点：Controller 三个 wiring 决策：①`getReferenceById` 拿 User reference 不查 DB；②sort 字符串映射在 controller 边界做，service 只接 `Pageable`；③Phase 1 imagePath 用占位符（service 签名跨阶段稳定，T19 升级 multipart 只需改 controller）。spec §7.7 prescribed 的 SecurityConfig 修改实际是多余的——Epic 1 的 `/api/**` 已经一刀切覆盖了 listings 路径，spec 没看现状。
+
+---
+
+### D-54 — Hibernate action-queue ordering: `deleteAll` + `save` flushes INSERT before DELETE
+
+**Date / where** Epic 2 Phase 1 T16, 2026-05-15
+**Symptom** `ListingRepositoryTest` and `ListingSchemaIntegrationTest` ran green in isolation but threw `Duplicate entry 'Owner' for key 'users.UK...'` on `users.save(...)` when the full suite ran them after `ListingControllerIntegrationTest`. The controller test (no class-level `@Transactional`) committed real users; the repository test's transactional `setupFixture` then called `users.deleteAll()` + `users.save(...)`, expecting the deletes to land first.
+**Root cause** Spring Data JPA's `JpaRepository.deleteAll()` does a `findAll() + delete(each)` pass that *schedules* deletions in the Hibernate persistence context — it does not issue SQL until flush. The next `users.save(...)` triggers a flush. Hibernate's action queue then orders operations by category: **INSERT → UPDATE → DELETE**. So the new user is INSERTed first, hitting the leftover row from the previous test class. Single-class runs avoided the bug because there were no leftover rows.
+**Fix** Replaced `deleteAll()` with `deleteAllInBatch()` in two test classes' `@BeforeEach`. `deleteAllInBatch()` issues a direct `DELETE FROM table` SQL and bypasses the persistence-context action queue entirely.
+**Lesson** Two pieces of test infrastructure quietly disagreed about lifecycle: integration tests that go through Spring MVC commit real data; transactional repository tests assume a clean slate. The mismatch surfaced as a Hibernate flush-order interaction, not as a teardown bug. When mixing transactional and non-transactional test classes, prefer `deleteAllInBatch` for the cleanup step — it commutes with whatever the previous class left behind. (Same family of bug as D-41: silent disagreement between two test-framework concerns about lifecycle. Two now this Epic.)
+
+> 💡 中文要点：Hibernate persistence context 的 action queue **默认顺序是 INSERT → UPDATE → DELETE**。`deleteAll()` 只把删除 schedule 到 context 而不立即执行 SQL，紧随的 `save()` 触发 flush，flush 时按 INSERT 先 DELETE 后输出，导致新插入撞到本该被删的旧行。修复：用 `deleteAllInBatch()`，它发原生 `DELETE FROM` SQL 立即执行，绕开 action queue。**跨非事务/事务测试类的清理一律用 `deleteAllInBatch`**——这是同 D-41 一族（两个测试框架对生命周期的隐式不一致）的第二例。
+
+---
+
+### D-55 — Phase 1 sealed: 16 commits, 102 tests, full backend listing CRUD ready for Demo #6
+
+**Date / where** Epic 2 Phase 1 T16 close, 2026-05-15
+**Retrospective** Phase 1 ships 16 commits since `d956295` (Category seeder), landing the full read/write listing surface end-to-end:
+- **3 entities** (`Listing` + 3 enums) with 4 named indexes
+- **2 repositories** (`CategoryRepository`, `ListingRepository`) with 4 derived queries
+- **6 DTOs** (3 request / 3 response) with Bean Validation + factory methods
+- **1 service** (`ListingService`) with 6 public methods sharing the §7.4 validation chain
+- **2 controllers** (`CategoryController`, `ListingController`) with 7 endpoints (1 + 6)
+- **8 new ErrorCodes** from spec §4.0
+- **102 tests** (51 unit + 51 integration; 0 flake after the singleton-container fix in D-41 and the deleteAllInBatch fix in D-54)
+- **14 journal entries** (D-40..D-55) capturing every non-obvious decision
+
+**Demo milestone #6 unlocks now.** User to walk through 6 endpoints + 8 transitions in Postman per `feedback_handson_demo.md`. Phase 2 (T17–T21, image upload + rate limits) starts after demo passes.
+
+> 💡 中文要点：**Phase 1 收官**——16 个 commits、102 个测试、3 个 entity、2 个 repository、6 个 DTO、1 个 service（6 方法）、2 个 controller（7 端点）。Demo milestone #6 解锁，可以打开 Postman 端到端走一遍 listing 创建/查/改/状态转/删。下一步 Phase 2 接 image upload。**两次坑都来自"两个测试框架对生命周期不一致"族（D-41 容器、D-54 action queue）**——这种 bug 单跑都看不出，必须全量套件才暴露。
+
+---
+
+### D-56 — Epic 2 backend sealed: 128 tests, 18 integration tests cover every endpoint + edge case
+
+**Date / where** Epic 2 Phase 3 T22/T23, 2026-05-15
+**Retrospective** Phase 3 adds 15 integration tests to the 3 sanity cases from T16, bringing the `ListingControllerIntegrationTest` to 18 cases. Coverage now spans:
+- **Create**: invalid category (400), SELL without price (400), GIVEAWAY ignores price, unauthenticated (401), round-trip create+listMine.
+- **Get one**: full response fields verified.
+- **Update**: fields change + image preserved; update REMOVED listing (400 LISTING_REMOVED).
+- **Status FSM**: AVAILABLE→RESERVED→SOLD chain, SOLD→AVAILABLE reversibility, REMOVED→AVAILABLE invalid (400 INVALID_STATUS_TRANSITION).
+- **Delete**: idempotent (204 twice), non-owner (404 anti-enumeration).
+- **List mine**: status filter returns correct subset.
+- **Image serving**: owner gets 200 + Cache-Control; non-owner gets 404.
+- **Categories**: 8 seeded categories returned.
+
+All tests use real multipart requests with a 1×1 JPEG generated in-memory. The `updateListing` helper supports optional image replacement. Total backend test count: **128** (32 service unit + 11 image storage + 18 listing integration + 9 auth integration + 7 listing repository + 4 schema + 7 DTO + 3 category + 37 other).
+
+> 💡 中文要点：Phase 3 把集成测试从 3 个 sanity case 补到 18 个，覆盖所有 endpoint 的 happy path + error path。每个 spec §4 的错误码都有对应的集成测试断言。128 个测试全绿 = 后端质量门关闭。论文答辩时"你怎么保证质量"的回答：128 个自动化测试 + 每个 commit 全量跑通。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 3 complete (D-56). 128 backend tests green; full integration test coverage for all listing endpoints. Frontend listing pages live. Next: Phase 6 (E2E + documentation).*

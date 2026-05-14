@@ -30,6 +30,7 @@ class AuthServiceRegisterTest {
         users = mock(UserRepository.class);
         encoder = new BCryptPasswordEncoder();
         rateLimit = mock(RateLimitService.class);
+        when(rateLimit.check(any(), any(Long.class), any())).thenReturn(RateLimitDecision.allowed());
         auth = new AuthService(users, encoder, rateLimit, null, null, null);
     }
 
@@ -92,9 +93,11 @@ class AuthServiceRegisterTest {
 
     @Test
     void rejectsRateLimitedIp() {
-        when(rateLimit.exceeded(eq("ratelimit:register:1.2.3.4"), eq(3L), any())).thenReturn(true);
+        when(rateLimit.check(eq("ratelimit:register:1.2.3.4"), eq(3L), any()))
+                .thenReturn(RateLimitDecision.blocked(3600L));
         ApiException ex = assertThrows(ApiException.class,
                 () -> auth.register("a@students.waikato.ac.nz", "Pass1234", "Alice", "1.2.3.4"));
         assertEquals(ErrorCode.TOO_MANY_REGISTRATIONS, ex.getCode());
+        assertEquals(3600L, ex.getRetryAfterSeconds());
     }
 }

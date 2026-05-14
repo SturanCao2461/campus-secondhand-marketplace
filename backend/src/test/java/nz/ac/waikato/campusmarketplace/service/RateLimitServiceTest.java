@@ -16,6 +16,7 @@ import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DataRedisTest
@@ -56,5 +57,38 @@ class RateLimitServiceTest {
         service.increment("test:k", Duration.ofSeconds(60));
         service.increment("test:k", Duration.ofSeconds(60));
         assertTrue(service.exceeded("test:k", 3, Duration.ofSeconds(60)));
+    }
+
+    @Test
+    void checkReturnsAllowedDecisionWhenUnderLimit() {
+        service.increment("test:underlimit", Duration.ofMinutes(5));
+        RateLimitDecision d = service.check("test:underlimit", 5, Duration.ofMinutes(5));
+        assertFalse(d.exceeded());
+        assertEquals(0L, d.retryAfterSeconds());
+    }
+
+    @Test
+    void checkReturnsBlockedDecisionWithRetryAfterWhenOver() {
+        for (int i = 0; i < 5; i++) {
+            service.increment("test:overlimit", Duration.ofMinutes(15));
+        }
+        RateLimitDecision d = service.check("test:overlimit", 5, Duration.ofMinutes(15));
+        assertTrue(d.exceeded());
+        // TTL must be > 0 and not greater than the 15-minute window.
+        assertTrue(d.retryAfterSeconds() > 0L);
+        assertTrue(d.retryAfterSeconds() <= 900L);
+    }
+
+    @Test
+    void incrementByAddsBytesAndCheckRespectsByteLimit() {
+        service.incrementBy("test:bytes", 5_000_000L, Duration.ofHours(1));
+        service.incrementBy("test:bytes", 3_000_000L, Duration.ofHours(1));
+        RateLimitDecision under = service.check("test:bytes", 50_000_000L, Duration.ofHours(1));
+        assertFalse(under.exceeded()); // 8 MB < 50 MB
+
+        service.incrementBy("test:bytes", 43_000_000L, Duration.ofHours(1));
+        RateLimitDecision over = service.check("test:bytes", 50_000_000L, Duration.ofHours(1));
+        assertTrue(over.exceeded()); // 51 MB >= 50 MB
+        assertNotNull(over.retryAfterSeconds());
     }
 }

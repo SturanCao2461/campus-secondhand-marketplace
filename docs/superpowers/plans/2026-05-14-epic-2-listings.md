@@ -1,0 +1,1172 @@
+# Epic 2: Listings — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Ship the seller-side listing system end-to-end — backend CRUD + image upload + status FSM + rate limiting, frontend pages with full UX polish (optimistic updates, accessibility, i18n preparation), automated tests across 5 layers (unit / component / integration / E2E / manual), and the carry-over Epic 1 fix that makes rate-limit responses comply with HTTP standards.
+
+**Architecture:** Backend Spring Boot 3.4.4 + JPA + MySQL + Redis. Listings, categories, image storage, and rate limiting are wired through the layered architecture established in Epic 1 (Controller → Service → Repository), with a new `ImageStorageService` interface mirroring Epic 1's `EmailService` pattern. Frontend React 19 + Vite + Tailwind v4 + React Router 7. New testing stack introduced for the frontend: Vitest + React Testing Library + MSW + Playwright.
+
+**Tech Stack:** Spring Boot 3.4.4 · Java 21 · MySQL 8 · Redis 7 · JJWT 0.12.6 · Testcontainers 1.21.3 · React 19 · Vite 8 · Tailwind 4 · Vitest · React Testing Library · MSW · Playwright.
+
+**Spec:** `docs/superpowers/specs/2026-05-14-epic-2-listings-design.md` (1192 lines, 8 sections). All decisions reference this spec by section number.
+
+---
+
+## Phase Overview
+
+The plan is organised into 6 phases with 44 tasks total. Each phase ends at a demoable checkpoint that can be shown to the supervisor.
+
+| Phase | Tasks | Focus | Demo |
+|---|---|---|---|
+| 0 — Infrastructure + Epic 1 fixes | T1–T4 | Global error→HTTP mapping, `Retry-After`, RateLimit extensions | #5 (login returns 429) |
+| 1 — Backend listing CRUD | T5–T16 | DB tables, entities, services, 6 endpoints (no image yet) | #6 (Postman CRUD) |
+| 2 — Image upload + rate limits | T17–T21 | Multipart, validation chain, file serving, RL on listing endpoints | #7 (real image + 429 on 21st create) |
+| 3 — Backend integration tests + journal | T22–T24 | 18-test suite, decision log D-38.. | #8 (60+ green tests) |
+| 4 — Frontend infrastructure + shared components | T25–T32 | Test stack, apiClient extension, 8 shared components, 2 hooks | — |
+| 5 — Frontend pages | T33–T40 | 4 pages + ListingForm + ListingCard wired to routes | **#9 — full browser flow** |
+| 6 — E2E + documentation | T41–T44 | Playwright specs, manual checklist, journal close-out | #10 (Epic 2 sealed) |
+
+---
+
+## Phase 0 — Infrastructure + Epic 1 fixes
+
+> **Reality check**: Epic 1 already wired `ErrorCode → HttpStatus` mapping (commit `56dc479`). `TOO_MANY_ATTEMPTS` already returns 429. What is missing is the `Retry-After` header, the TTL-aware `RateLimitService.exceeded()` return, and the new `incrementBy` helper. Phase 0 fixes those three gaps and adds the verification test.
+
+### Task T1 — `ApiException` carries `retryAfterSeconds`; handler emits `Retry-After`
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/exception/ApiException.java`
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/exception/GlobalExceptionHandler.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/exception/ApiExceptionRetryAfterTest.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/exception/GlobalExceptionHandlerRetryAfterTest.java`
+
+- [ ] **Step 1: Write the failing test for the new constructor**
+
+```java
+package nz.ac.waikato.campusmarketplace.exception;
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class ApiExceptionRetryAfterTest {
+
+    @Test
+    void defaultConstructorHasNoRetryAfter() {
+        ApiException ex = new ApiException(ErrorCode.BAD_CREDENTIALS, "wrong");
+        assertThat(ex.getRetryAfterSeconds()).isNull();
+    }
+
+    @Test
+    void constructorWithRetryAfterStoresValue() {
+        ApiException ex = new ApiException(ErrorCode.TOO_MANY_ATTEMPTS, "slow down", 900L);
+        assertThat(ex.getRetryAfterSeconds()).isEqualTo(900L);
+        assertThat(ex.getCode()).isEqualTo(ErrorCode.TOO_MANY_ATTEMPTS);
+        assertThat(ex.getMessage()).isEqualTo("slow down");
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+cd backend && ./mvnw -Dtest=ApiExceptionRetryAfterTest test
+```
+Expected: FAIL — `cannot find symbol: method getRetryAfterSeconds()` and "no matching constructor".
+
+- [ ] **Step 3: Add the field + constructor + getter to `ApiException.java`**
+
+```java
+package nz.ac.waikato.campusmarketplace.exception;
+
+public class ApiException extends RuntimeException {
+    private final ErrorCode code;
+    private final Long retryAfterSeconds;
+
+    public ApiException(ErrorCode code, String message) {
+        this(code, message, null);
+    }
+
+    public ApiException(ErrorCode code, String message, Long retryAfterSeconds) {
+        super(message);
+        this.code = code;
+        this.retryAfterSeconds = retryAfterSeconds;
+    }
+
+    public ErrorCode getCode() { return code; }
+    public Long getRetryAfterSeconds() { return retryAfterSeconds; }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```bash
+./mvnw -Dtest=ApiExceptionRetryAfterTest test
+```
+Expected: PASS — Tests run: 2, Failures: 0.
+
+- [ ] **Step 5: Write the failing test for the handler emitting `Retry-After`**
+
+Create `GlobalExceptionHandlerRetryAfterTest.java`:
+
+```java
+package nz.ac.waikato.campusmarketplace.exception;
+
+import jakarta.servlet.http.HttpServletRequest;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class GlobalExceptionHandlerRetryAfterTest {
+
+    private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+    @Test
+    void apiExceptionWithRetryAfterAddsHeader() {
+        HttpServletRequest req = new MockHttpServletRequest("POST", "/api/auth/login");
+        ApiException ex = new ApiException(ErrorCode.TOO_MANY_ATTEMPTS, "wait", 900L);
+
+        ResponseEntity<ApiErrorResponse> response = handler.handleApi(ex, req);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(429);
+        assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("900");
+        assertThat(response.getBody().code()).isEqualTo("TOO_MANY_ATTEMPTS");
+    }
+
+    @Test
+    void apiExceptionWithoutRetryAfterOmitsHeader() {
+        HttpServletRequest req = new MockHttpServletRequest("POST", "/api/auth/login");
+        ApiException ex = new ApiException(ErrorCode.BAD_CREDENTIALS, "nope");
+
+        ResponseEntity<ApiErrorResponse> response = handler.handleApi(ex, req);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+        assertThat(response.getHeaders().getFirst("Retry-After")).isNull();
+    }
+}
+```
+
+- [ ] **Step 6: Run handler test to verify it fails**
+
+```bash
+./mvnw -Dtest=GlobalExceptionHandlerRetryAfterTest test
+```
+Expected: FAIL — first test fails because the handler doesn't add the header yet.
+
+- [ ] **Step 7: Update `GlobalExceptionHandler.handleApi` to emit `Retry-After`**
+
+```java
+@ExceptionHandler(ApiException.class)
+public ResponseEntity<ApiErrorResponse> handleApi(ApiException ex, HttpServletRequest req) {
+    log.debug("ApiException at {}: {} {}", req.getRequestURI(), ex.getCode(), ex.getMessage());
+    ResponseEntity.BodyBuilder builder = ResponseEntity.status(ex.getCode().getStatus());
+    if (ex.getRetryAfterSeconds() != null) {
+        builder.header("Retry-After", ex.getRetryAfterSeconds().toString());
+    }
+    return builder.body(ApiErrorResponse.of(ex.getCode(), ex.getMessage()));
+}
+```
+
+- [ ] **Step 8: Run all exception tests**
+
+```bash
+./mvnw -Dtest='nz.ac.waikato.campusmarketplace.exception.*Test' test
+```
+Expected: PASS.
+
+- [ ] **Step 9: Run the full test suite**
+
+```bash
+./mvnw test
+```
+Expected: existing 36 tests + 4 new = 40 tests green.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add backend/src/main/java/nz/ac/waikato/campusmarketplace/exception/ApiException.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/exception/GlobalExceptionHandler.java \
+        backend/src/test/java/nz/ac/waikato/campusmarketplace/exception/ApiExceptionRetryAfterTest.java \
+        backend/src/test/java/nz/ac/waikato/campusmarketplace/exception/GlobalExceptionHandlerRetryAfterTest.java
+git commit -m "feat(backend): ApiException supports retryAfterSeconds; handler emits Retry-After header"
+```
+
+---
+
+### Task T2 — `RateLimitService.check()` returns `RateLimitDecision`; new `incrementBy(key, n, ttl)`
+
+**Files:**
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/RateLimitDecision.java`
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/RateLimitService.java`
+- Modify: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/RateLimitServiceTest.java`
+
+- [ ] **Step 1: Create `RateLimitDecision` record**
+
+```java
+package nz.ac.waikato.campusmarketplace.service;
+
+public record RateLimitDecision(boolean exceeded, long retryAfterSeconds) {
+    public static RateLimitDecision allowed() { return new RateLimitDecision(false, 0L); }
+    public static RateLimitDecision blocked(long retryAfterSeconds) { return new RateLimitDecision(true, retryAfterSeconds); }
+}
+```
+
+- [ ] **Step 2: Add 3 failing tests to `RateLimitServiceTest`**
+
+(Append inside the existing test class — keeps the 2 existing tests untouched.)
+
+```java
+@Test
+void checkReturnsAllowedDecisionWhenUnderLimit() {
+    String key = "ratelimit:test:underlimit";
+    rateLimit.increment(key, Duration.ofMinutes(5));
+    RateLimitDecision d = rateLimit.check(key, 5, Duration.ofMinutes(5));
+    assertThat(d.exceeded()).isFalse();
+    assertThat(d.retryAfterSeconds()).isEqualTo(0L);
+}
+
+@Test
+void checkReturnsBlockedDecisionWithRetryAfterWhenOver() {
+    String key = "ratelimit:test:overlimit";
+    for (int i = 0; i < 5; i++) rateLimit.increment(key, Duration.ofMinutes(15));
+    RateLimitDecision d = rateLimit.check(key, 5, Duration.ofMinutes(15));
+    assertThat(d.exceeded()).isTrue();
+    assertThat(d.retryAfterSeconds()).isBetween(1L, 900L);
+}
+
+@Test
+void incrementByAddsBytes() {
+    String key = "ratelimit:test:bytes";
+    rateLimit.incrementBy(key, 5_000_000L, Duration.ofHours(1));
+    rateLimit.incrementBy(key, 3_000_000L, Duration.ofHours(1));
+    assertThat(rateLimit.check(key, 50_000_000L, Duration.ofHours(1)).exceeded()).isFalse();
+    rateLimit.incrementBy(key, 43_000_000L, Duration.ofHours(1));
+    assertThat(rateLimit.check(key, 50_000_000L, Duration.ofHours(1)).exceeded()).isTrue();
+}
+```
+
+- [ ] **Step 3: Run to confirm failures**
+
+```bash
+./mvnw -Dtest=RateLimitServiceTest test
+```
+Expected: FAIL — `check` and `incrementBy` don't exist yet.
+
+- [ ] **Step 4: Replace `RateLimitService.java`**
+
+```java
+package nz.ac.waikato.campusmarketplace.service;
+
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
+
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+
+@Service
+public class RateLimitService {
+
+    private final StringRedisTemplate redis;
+
+    public RateLimitService(StringRedisTemplate redis) {
+        this.redis = redis;
+    }
+
+    public long increment(String key, Duration window) {
+        Long count = redis.opsForValue().increment(key);
+        if (count != null && count == 1L) {
+            redis.expire(key, window);
+        }
+        return count == null ? 0 : count;
+    }
+
+    public long incrementBy(String key, long delta, Duration window) {
+        Long total = redis.opsForValue().increment(key, delta);
+        if (total != null && total == delta) {
+            redis.expire(key, window);
+        }
+        return total == null ? 0 : total;
+    }
+
+    /** TTL-aware decision API. */
+    public RateLimitDecision check(String key, long limit, Duration window) {
+        String raw = redis.opsForValue().get(key);
+        if (raw == null) return RateLimitDecision.allowed();
+        long current = Long.parseLong(raw);
+        if (current < limit) return RateLimitDecision.allowed();
+        Long ttlSeconds = redis.getExpire(key, TimeUnit.SECONDS);
+        long retry = ttlSeconds == null || ttlSeconds <= 0 ? window.toSeconds() : ttlSeconds;
+        return RateLimitDecision.blocked(retry);
+    }
+
+    /** Legacy boolean API — thin delegate. */
+    public boolean exceeded(String key, long limit, Duration window) {
+        return check(key, limit, window).exceeded();
+    }
+}
+```
+
+- [ ] **Step 5: Run rate-limit tests**
+
+```bash
+./mvnw -Dtest=RateLimitServiceTest test
+```
+Expected: PASS — 5 tests.
+
+- [ ] **Step 6: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 43 tests green (no auth-test regressions).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add backend/src/main/java/nz/ac/waikato/campusmarketplace/service/RateLimitDecision.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/service/RateLimitService.java \
+        backend/src/test/java/nz/ac/waikato/campusmarketplace/service/RateLimitServiceTest.java
+git commit -m "feat(backend): RateLimitService.check() returns Decision with TTL; add incrementBy for byte limits"
+```
+
+---
+
+### Task T3 — `AuthService` register / login throw with `retryAfterSeconds`
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/AuthService.java`
+- Modify: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/AuthServiceLoginLogoutTest.java`
+- Modify: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/AuthServiceRegisterTest.java`
+
+- [ ] **Step 1: Update login test to assert retryAfterSeconds**
+
+In `AuthServiceLoginLogoutTest`, replace the existing TOO_MANY_ATTEMPTS test with:
+
+```java
+@Test
+void loginRateLimitBlocksAndIncludesRetryAfter() {
+    when(rateLimit.check(eq("ratelimit:login:" + EMAIL), eq(5L), any()))
+        .thenReturn(RateLimitDecision.blocked(900L));
+
+    assertThatThrownBy(() -> svc.login(EMAIL, "anything"))
+        .isInstanceOf(ApiException.class)
+        .satisfies(ex -> {
+            ApiException api = (ApiException) ex;
+            assertThat(api.getCode()).isEqualTo(ErrorCode.TOO_MANY_ATTEMPTS);
+            assertThat(api.getRetryAfterSeconds()).isEqualTo(900L);
+        });
+}
+```
+
+- [ ] **Step 2: Same change for register test**
+
+```java
+@Test
+void registerRateLimitBlocksAndIncludesRetryAfter() {
+    when(rateLimit.check(eq("ratelimit:register:" + IP), eq(3L), any()))
+        .thenReturn(RateLimitDecision.blocked(3600L));
+
+    assertThatThrownBy(() -> svc.register("alice@students.waikato.ac.nz", "Pass1234", "Alice", IP))
+        .isInstanceOf(ApiException.class)
+        .satisfies(ex -> {
+            ApiException api = (ApiException) ex;
+            assertThat(api.getCode()).isEqualTo(ErrorCode.TOO_MANY_REGISTRATIONS);
+            assertThat(api.getRetryAfterSeconds()).isEqualTo(3600L);
+        });
+}
+```
+
+- [ ] **Step 3: Run to confirm failures**
+
+```bash
+./mvnw -Dtest='AuthServiceLoginLogoutTest,AuthServiceRegisterTest' test
+```
+Expected: FAIL — production still uses old boolean API.
+
+- [ ] **Step 4: Update `AuthService.register` rate-limit branch**
+
+Replace:
+```java
+if (rateLimit.exceeded("ratelimit:register:" + ip, 3, Duration.ofHours(1))) {
+    throw new ApiException(ErrorCode.TOO_MANY_REGISTRATIONS,
+            "Too many registrations from your network. Try again later.");
+}
+```
+With:
+```java
+RateLimitDecision regDecision = rateLimit.check("ratelimit:register:" + ip, 3, Duration.ofHours(1));
+if (regDecision.exceeded()) {
+    throw new ApiException(ErrorCode.TOO_MANY_REGISTRATIONS,
+            "Too many registrations from your network. Try again later.",
+            regDecision.retryAfterSeconds());
+}
+```
+
+- [ ] **Step 5: Update `AuthService.login` rate-limit branch**
+
+Replace:
+```java
+String key = "ratelimit:login:" + email;
+if (rateLimit.exceeded(key, 5, Duration.ofMinutes(15))) {
+    throw new ApiException(ErrorCode.TOO_MANY_ATTEMPTS,
+            "Too many attempts. Try again in 15 minutes.");
+}
+```
+With:
+```java
+String key = "ratelimit:login:" + email;
+RateLimitDecision loginDecision = rateLimit.check(key, 5, Duration.ofMinutes(15));
+if (loginDecision.exceeded()) {
+    throw new ApiException(ErrorCode.TOO_MANY_ATTEMPTS,
+            "Too many attempts. Try again in 15 minutes.",
+            loginDecision.retryAfterSeconds());
+}
+```
+
+Add `import nz.ac.waikato.campusmarketplace.service.RateLimitDecision;` if needed (same package so likely not).
+
+- [ ] **Step 6: Run auth tests**
+
+```bash
+./mvnw -Dtest='AuthServiceLoginLogoutTest,AuthServiceRegisterTest' test
+```
+Expected: PASS.
+
+- [ ] **Step 7: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 43+ tests green.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add backend/src/main/java/nz/ac/waikato/campusmarketplace/service/AuthService.java \
+        backend/src/test/java/nz/ac/waikato/campusmarketplace/service/AuthServiceLoginLogoutTest.java \
+        backend/src/test/java/nz/ac/waikato/campusmarketplace/service/AuthServiceRegisterTest.java
+git commit -m "feat(backend): AuthService throws TOO_MANY_ATTEMPTS/REGISTRATIONS with retryAfterSeconds from RateLimitDecision"
+```
+
+---
+
+### Task T4 — Integration test: login rate-limit returns 429 + `Retry-After` header
+
+**Files:**
+- Modify: `backend/src/test/java/nz/ac/waikato/campusmarketplace/controller/AuthControllerIntegrationTest.java`
+- Modify: `docs/engineering-journal.md`
+
+- [ ] **Step 1: Add integration test**
+
+Append to `AuthControllerIntegrationTest`:
+
+```java
+@Test
+@DisplayName("login: rate limit returns 429 with Retry-After header")
+void loginRateLimitReturns429WithRetryAfter() {
+    registerTestUser("ratelimit-target@students.waikato.ac.nz", "Pass1234", "RLTarget");
+
+    for (int i = 0; i < 5; i++) {
+        ResponseEntity<String> r = postJson("/api/auth/login",
+                Map.of("email", "ratelimit-target@students.waikato.ac.nz",
+                       "password", "WrongPass" + i));
+        assertThat(r.getStatusCode().value()).isEqualTo(401);
+    }
+
+    ResponseEntity<String> blocked = postJson("/api/auth/login",
+            Map.of("email", "ratelimit-target@students.waikato.ac.nz",
+                   "password", "WrongPass6"));
+
+    assertThat(blocked.getStatusCode().value()).isEqualTo(429);
+    String retryAfter = blocked.getHeaders().getFirst("Retry-After");
+    assertThat(retryAfter).isNotNull();
+    long seconds = Long.parseLong(retryAfter);
+    assertThat(seconds).isBetween(1L, 900L);
+    assertThat(blocked.getBody()).contains("TOO_MANY_ATTEMPTS");
+}
+```
+
+> If helpers `registerTestUser` / `postJson` don't exist with these signatures, read the existing integration test and adapt to the existing style.
+
+- [ ] **Step 2: Run the test alone**
+
+```bash
+./mvnw -Dtest=AuthControllerIntegrationTest#loginRateLimitReturns429WithRetryAfter test
+```
+Expected: PASS.
+
+- [ ] **Step 3: Run full integration test class**
+
+```bash
+./mvnw -Dtest=AuthControllerIntegrationTest test
+```
+Expected: 9 tests green (8 existing + 1 new).
+
+- [ ] **Step 4: Run the entire suite**
+
+```bash
+./mvnw test
+```
+Expected: 44+ tests green.
+
+- [ ] **Step 5: Append D-38 to engineering journal**
+
+```markdown
+### D-38 — `Retry-After` header on rate-limit responses + TTL-aware `RateLimitService.check`
+
+**Date / where** Epic 2 Phase 0, 2026-05-14
+**Choice** `ApiException` carries an optional `retryAfterSeconds`. `GlobalExceptionHandler` emits the `Retry-After` HTTP header when present. `RateLimitService.check()` returns a `RateLimitDecision(boolean exceeded, long retryAfterSeconds)` record so callers can populate the field.
+**Why** Industry standard for `429 Too Many Requests` is to include `Retry-After` so clients can implement intelligent retry instead of polling blind. The TTL-aware decision is the cheapest way to surface this — Redis already tracks the key TTL via `EXPIRE`; one `TTL` call recovers it.
+**Trade-off accepted** The legacy boolean `exceeded()` is retained as a thin delegate so older call sites keep compiling. Slated for removal once all consumers move to `check()`.
+
+> 💡 中文要点：限流响应不只返回 429，还要给客户端 `Retry-After` 头告诉它"还有多少秒可以再来"。`RateLimitService.check()` 拿 Redis 的 TTL 当 retry-after，Epic 1 已经有 EXPIRE 写入所以 0 额外成本。前端可据此做指数退避——工业标准做法。
+```
+
+Bump the journal's closing line:
+```markdown
+*Last updated: 2026-05-14 — Epic 2 Phase 0 complete (D-38). Retry-After header now emitted on rate-limit responses.*
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/src/test/java/nz/ac/waikato/campusmarketplace/controller/AuthControllerIntegrationTest.java \
+        docs/engineering-journal.md
+git commit -m "test(backend): verify login rate limit returns 429 + Retry-After; journal D-38"
+```
+
+**Demo milestone #5 — your turn:**
+Start the backend (`cd backend && ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev`) and use Postman to:
+1. Register a user.
+2. POST `/api/auth/login` with wrong password — repeat **6 times**.
+3. On the 6th response, verify:
+   - Status: **429 Too Many Requests**
+   - Header: **`Retry-After: <seconds>`** (some number 1–900)
+   - Body: `{"code":"TOO_MANY_ATTEMPTS","message":"Too many attempts. Try again in 15 minutes."}`
+
+---
+
+## Phase 1 — Backend listing CRUD (no image yet)
+
+### Task T5 — DB migration: `categories` table + 8 seed rows
+### Task T6 — `Category` JPA entity + `CategoryRepository`
+### Task T7 — `GET /api/categories` endpoint + unit + integration test
+### Task T8 — `Listing` entity + 3 enums + 4 indexes + minimal repository
+
+> **Boundary note (2026-05-15):** Original plan split this into T8 (DDL migration) + T9 (entity + enums). Because Phase 1 switched to JPA `ddl-auto=update` (commit `14fdb6d`, see D-40 in journal), the schema is **a side effect** of the entity declaration — the `@Index` annotations on `@Table` are what produce the 4 named indexes. T8 and T9 cannot be split cleanly under that strategy, so T8 absorbs the entity work. T9 is repurposed for the repository derived queries (formerly T10). T10 is marked as absorbed.
+
+**Files:**
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/ListingStatus.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/ListingType.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/Condition.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/Listing.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/repository/ListingRepository.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/entity/ListingSchemaIntegrationTest.java`
+
+- [ ] **Step 1: Write the failing schema integration test (4 tests)**
+
+The test uses the existing `AbstractIntegrationTest` (singleton-container pattern from D-41). It verifies:
+1. `listings` table exists in `information_schema.tables`
+2. The 4 named indexes exist via `information_schema.statistics`
+3. A full Listing round-trips (save → findById) preserving all fields, defaults, and lazy associations
+4. Enums persist as VARCHAR strings, not ordinals (raw SQL spot-check)
+
+Wraps each persistence test in `clean()` to wipe `listings` and `users`; categories are seeded by `CategorySeeder` and stay.
+
+- [ ] **Step 2: Run test to verify it fails to compile**
+
+```bash
+./mvnw -Dtest=ListingSchemaIntegrationTest test
+```
+Expected: COMPILE FAIL — `Listing`, `ListingRepository`, `ListingStatus`, `ListingType`, `Condition` symbols missing.
+
+- [ ] **Step 3: Create the 3 enum classes**
+
+```java
+package nz.ac.waikato.campusmarketplace.entity;
+public enum ListingStatus { AVAILABLE, RESERVED, SOLD, REMOVED }
+```
+```java
+package nz.ac.waikato.campusmarketplace.entity;
+public enum ListingType { SELL, GIVEAWAY }
+```
+```java
+package nz.ac.waikato.campusmarketplace.entity;
+public enum Condition { NEW, LIKE_NEW, GOOD, FAIR, POOR }
+```
+
+- [ ] **Step 4: Create `Listing.java` entity**
+
+Full entity with all 16 columns, `@ManyToOne(LAZY)` to `User` and `Category`, 4 `@Index` annotations on `@Table`, `@Enumerated(EnumType.STRING)` on the 3 enum fields, backtick-quoted `condition` column, `@CreationTimestamp` / `@UpdateTimestamp` on the timestamp fields, `deleted_at` for parity with `users`.
+
+- [ ] **Step 5: Create `ListingRepository.java` (minimal)**
+
+```java
+package nz.ac.waikato.campusmarketplace.repository;
+
+import nz.ac.waikato.campusmarketplace.entity.Listing;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface ListingRepository extends JpaRepository<Listing, Long> {
+}
+```
+Derived queries are deliberately deferred to T9.
+
+- [ ] **Step 6: Run schema test alone**
+
+```bash
+./mvnw -Dtest=ListingSchemaIntegrationTest test
+```
+Expected: PASS — 4/4 green.
+
+- [ ] **Step 7: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 49 + 4 = 53 tests green.
+
+- [ ] **Step 8: Append D-42 to engineering journal**
+
+Three lessons worth documenting:
+- Why 4 indexes were created up-front (read-pattern coverage including Epic 3's `WHERE status = 'AVAILABLE'`).
+- The `condition` column gotcha — MySQL reserved word, must be backtick-quoted in `@Column(name = "\`condition\`")`.
+- How to verify schema with `information_schema.statistics` instead of round-tripping a row (cheaper, more direct).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/ListingStatus.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/ListingType.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/Condition.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/Listing.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/repository/ListingRepository.java \
+        backend/src/test/java/nz/ac/waikato/campusmarketplace/entity/ListingSchemaIntegrationTest.java \
+        docs/engineering-journal.md \
+        docs/superpowers/plans/2026-05-14-epic-2-listings.md
+git commit -m "feat(backend): Listing entity + 3 enums + 4 indexes + minimal repository"
+```
+
+---
+
+### Task T9 — `ListingRepository` derived queries (`findByOwner`, `findByImagePath`, `Pageable` queries)
+
+> **Boundary note (2026-05-15):** Repurposed from "Listing entity + enums" (absorbed by T8) to "repository derived queries" (formerly T10).
+
+### Task T10 — *(absorbed by T9)*
+### Task T11 — DTOs: `CreateListingRequest`, `UpdateListingRequest`, `ChangeStatusRequest`, `ListingResponse`, `ListingSummary`, `PagedListings`
+
+> **Style note**: All DTOs are Java `record` per the Epic 1 precedent (`RegisterRequest`, `UserResponse`, `CategoryResponse`). Bean Validation annotations sit on `record` components. Response DTOs expose a static `from(...)` factory for entity-to-DTO mapping.
+
+**Files:**
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/CreateListingRequest.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/UpdateListingRequest.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/ChangeStatusRequest.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/ListingResponse.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/ListingSummary.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/PagedListings.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/dto/ListingDtoTest.java`
+
+- [ ] **Step 1: Write the failing DTO test (~7 cases)**
+
+Pure POJO test, no Spring context. Covers:
+1. `ListingResponse.from(Listing)` builds the URL form (`imageUrl = "/api/uploads/" + image_path`)
+2. `ListingResponse.from` carries the nested `CategoryResponse`
+3. `ListingSummary.from` includes only the slim field set; description / meetAt / reasonForSelling are absent
+4. `PagedListings.from(Page<Listing>)` maps page metadata: page (number), pageSize (size), totalPages, totalItems
+5. `PagedListings.from` items list contains `ListingSummary` instances (not `Listing`)
+6. `CreateListingRequest` `@Size(max = 80)` on title produces a violation when 81 chars
+7. `CreateListingRequest` `@NotBlank` on title produces a violation when empty
+
+- [ ] **Step 2: Run test, expect compile failure**
+
+```bash
+./mvnw -Dtest=ListingDtoTest test
+```
+Expected: COMPILE FAIL — DTO classes don't exist yet.
+
+- [ ] **Step 3: Create the 3 Request DTOs**
+
+`CreateListingRequest` carries: title (`@NotBlank @Size(max=80)`), description (`@NotBlank @Size(max=2000)`), categoryCode (`@NotBlank`), listingType (`@NotNull`), price (BigDecimal, optional), originalPrice (BigDecimal, optional), condition (Condition enum, optional), meetAt (`@Size(max=100)`, optional), negotiable (Boolean, optional), reasonForSelling (`@Size(max=100)`, optional). No `image` field — multipart handling stays in the controller.
+
+`UpdateListingRequest` mirrors `CreateListingRequest` exactly. Kept as a separate type for naming clarity at controller signatures and to absorb future divergence without a refactor.
+
+`ChangeStatusRequest`: single `@NotNull ListingStatus newStatus`.
+
+- [ ] **Step 4: Create the 3 Response DTOs**
+
+`ListingResponse` (full): id, ownerId, title, description, price, originalPrice, category (`CategoryResponse`), imageUrl, status, listingType, condition, meetAt, negotiable, reasonForSelling, createdAt, updatedAt. Static `from(Listing)` factory builds the `imageUrl` as `"/api/uploads/" + entity.getImagePath()` and delegates to `CategoryResponse.from`.
+
+`ListingSummary` (slim, for list view): id, title, price, imageUrl, status, listingType, category (`CategoryResponse`), createdAt. Same `imageUrl` prefix logic.
+
+`PagedListings`: `List<ListingSummary> items`, page, pageSize, totalPages, totalItems. Static `from(Page<Listing>)` factory: maps `page.getContent()` to `ListingSummary` instances and pulls `page.getNumber()` / `page.getSize()` / `page.getTotalPages()` / `page.getTotalElements()`.
+
+- [ ] **Step 5: Run DTO test alone**
+
+```bash
+./mvnw -Dtest=ListingDtoTest test
+```
+Expected: PASS — 7/7 green.
+
+- [ ] **Step 6: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 60 + 7 = 67 tests green.
+
+- [ ] **Step 7: Append D-47 to engineering journal**
+
+Two lessons:
+- Why `image_path → imageUrl` translation lives in the DTO factory (single source of truth for URL shape).
+- Why `PagedListings` is a custom record instead of returning Spring's `Page<>` directly (field naming, frontend contract).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git commit -m "feat(backend): listing DTOs (3 request + 3 response) with validation and factories"
+```
+### Task T12 — `ListingService.create` + 8 unit tests
+
+> **Boundary note (2026-05-15):** Phase 1 is "no image yet" (plan overview L22-27). `ListingService.create` takes `String imagePath` as a third parameter from day one — Phase 1's T16 controller passes a placeholder; T19 (Phase 2) swaps in `ImageStorageService.store(file)`. Service signature is stable across the boundary; only the controller flips. T12 also adds the 8 new `ErrorCode` enum values from spec §4.0 in one shot, even though most are consumed by T13/T14/T15/T17 — keeps the enum-edit blast radius to a single commit.
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/exception/ErrorCode.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/ListingService.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/ListingServiceCreateTest.java`
+
+- [ ] **Step 1: Write the failing unit test (8 cases)**
+
+Pure Mockito unit test (`@ExtendWith(MockitoExtension.class)`), mirroring the Epic 1 service test pattern (`AuthServiceLoginLogoutTest`). Mock `CategoryRepository` + `ListingRepository`; assert calls + thrown `ApiException` codes + saved entity field values.
+
+- [ ] **Step 2: Run test, expect compile failure**
+
+```bash
+./mvnw -Dtest=ListingServiceCreateTest test
+```
+Expected: COMPILE FAIL — `ListingService` and 8 new `ErrorCode` values missing.
+
+- [ ] **Step 3: Add 8 new `ErrorCode` enum values**
+
+```java
+LISTING_NOT_FOUND(HttpStatus.NOT_FOUND),
+NOT_LISTING_OWNER(HttpStatus.FORBIDDEN),
+INVALID_STATUS_TRANSITION(HttpStatus.BAD_REQUEST),
+LISTING_REMOVED(HttpStatus.BAD_REQUEST),
+INVALID_CATEGORY(HttpStatus.BAD_REQUEST),
+INVALID_IMAGE(HttpStatus.BAD_REQUEST),
+MISSING_IMAGE(HttpStatus.BAD_REQUEST),
+INVALID_PRICE(HttpStatus.BAD_REQUEST),
+```
+
+- [ ] **Step 4: Create `ListingService.create`**
+
+```
+create(User currentUser, CreateListingRequest req, String imagePath) -> ListingResponse:
+  1. categories.findByCode(req.categoryCode):
+       empty || !active  -> throw INVALID_CATEGORY
+  2. if req.listingType == SELL:
+       price == null || price.signum() <= 0  -> throw INVALID_PRICE
+  3. if req.originalPrice != null && originalPrice.signum() <= 0:
+       throw INVALID_PRICE
+  4. effectivePrice    = (listingType == GIVEAWAY) ? null : req.price
+  5. effectiveNegotiable = (req.negotiable != null) ? req.negotiable : false
+  6. listings.save(Listing.builder()...build())
+  7. return ListingResponse.from(saved)
+```
+
+`@Service` annotation, constructor injection, `@Transactional` on the create method.
+
+- [ ] **Step 5: Run service unit test**
+
+```bash
+./mvnw -Dtest=ListingServiceCreateTest test
+```
+Expected: PASS — 8/8 green.
+
+- [ ] **Step 6: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 67 + 8 = 75 tests green.
+
+- [ ] **Step 7: Append D-48 to engineering journal**
+
+Two lessons:
+- Why `imagePath` enters the service signature in Phase 1 already (stability across the Phase-1/Phase-2 boundary).
+- Why all 8 listing `ErrorCode` values land together even though most are consumed later (single source of truth, smaller commit noise).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git commit -m "feat(backend): ListingService.create + 8 new ErrorCode values"
+```
+### Task T13 — `ListingService.update` + 7 unit tests
+
+> **Anti-enumeration note:** Per spec §7.3 / §7.4, the public API in Epic 2 never emits `403 NOT_LISTING_OWNER`. Non-owner edits return `404 LISTING_NOT_FOUND` — indistinguishable from "id does not exist". The validation chain is strict: existence → ownership → status → business rules; first failure short-circuits.
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/ListingService.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/ListingServiceUpdateTest.java`
+
+- [ ] **Step 1: Write the failing unit test (7 cases)**
+
+Same Mockito + `mock()` static + JUnit-standard assertions style as `ListingServiceCreateTest`. Mock `CategoryRepository` + `ListingRepository`; capture saved entity; verify `never()` on early-rejection paths.
+
+Fixture: existing `Listing` (id=42, owner=user7, status=AVAILABLE, imagePath="listings/old.jpg"). `listings.findById(42L)` returns this fixture; `findById` of any other id returns empty.
+
+Test cases:
+1. Happy path **without** new image — title/description/price/etc. updated; `imagePath` unchanged; ListingResponse returned with `id=42`.
+2. Happy path **with** new image — `imagePath` replaced when `newImagePath != null`.
+3. Listing not found (`findById` empty) → `LISTING_NOT_FOUND`; never save.
+4. Non-owner (current user id ≠ owner id) → `LISTING_NOT_FOUND` (anti-enumeration); never save.
+5. Status is REMOVED → `LISTING_REMOVED`; never save.
+6. Unknown / inactive category → `INVALID_CATEGORY`; never save.
+7. SELL with `price=null` → `INVALID_PRICE`; never save.
+
+- [ ] **Step 2: Run test, expect compile failure**
+
+```bash
+./mvnw -Dtest=ListingServiceUpdateTest test
+```
+Expected: COMPILE FAIL — `update` method doesn't exist.
+
+- [ ] **Step 3: Add `update` to `ListingService`**
+
+```
+update(User currentUser, Long id, UpdateListingRequest req, String newImagePath) -> ListingResponse:
+  1. listings.findById(id):
+       empty -> throw LISTING_NOT_FOUND
+  2. listing.owner.id != currentUser.id -> throw LISTING_NOT_FOUND  (spec §7.3)
+  3. listing.status == REMOVED -> throw LISTING_REMOVED
+  4. categories.findByCode(req.categoryCode):
+       empty || !active -> throw INVALID_CATEGORY
+  5. if listingType == SELL && (price == null || price.signum() <= 0):
+       throw INVALID_PRICE
+  6. if originalPrice != null && originalPrice.signum() <= 0:
+       throw INVALID_PRICE
+  7. apply: title / description / category / listingType / price (null on GIVEAWAY) /
+            originalPrice / condition / meetAt / negotiable (null -> false) /
+            reasonForSelling
+     if newImagePath != null: listing.imagePath = newImagePath
+  8. save, return ListingResponse.from(saved)
+```
+
+`@Transactional` on the method.
+
+- [ ] **Step 4: Run service unit test**
+
+```bash
+./mvnw -Dtest=ListingServiceUpdateTest test
+```
+Expected: PASS — 7/7 green.
+
+- [ ] **Step 5: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 75 + 7 = 82 tests green.
+
+- [ ] **Step 6: Append D-49 to engineering journal**
+
+The 404-as-403 anti-enumeration decision in a write operation: same principle as Epic 1 D-11/D-14/D-16, but first time applied to a *write* path here. Worth a single decision entry.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git commit -m "feat(backend): ListingService.update with 404-as-403 anti-enumeration for non-owner edits"
+```
+### Task T14 — `ListingService.changeStatus` + FSM table + 8 unit tests
+
+> **FSM source of truth:** Spec DC-3 (4 states, 8 legal edges, REMOVED is terminal, SOLD is reversible). Implementation as `private static final Map<ListingStatus, Set<ListingStatus>> ALLOWED_TRANSITIONS` on `ListingService`. Self-transitions (e.g. `AVAILABLE → AVAILABLE`) are illegal — not listed in the table. Idempotency for repeat-DELETE is solved later at the controller layer (T16), not the service.
+
+> **Anti-enumeration carry-over:** Same as T13 — listing-not-found and non-owner both return `LISTING_NOT_FOUND`. `LISTING_REMOVED` is *not* used here; `REMOVED → anything` falls under `INVALID_STATUS_TRANSITION` because the FSM forbids it (spec §4.5 errors list confirms this — no `LISTING_REMOVED` listed).
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/ListingService.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/ListingServiceChangeStatusTest.java`
+
+- [ ] **Step 1: Write the failing unit test (8 cases)**
+
+Same Mockito + `mock()` static + JUnit-standard assertions style. Mock `ListingRepository`; capture saved entity for happy paths; verify `never()` save for error paths.
+
+| # | Type | Case |
+|---|---|---|
+| 1 | happy | AVAILABLE → RESERVED |
+| 2 | happy | RESERVED → SOLD |
+| 3 | happy | SOLD → AVAILABLE (spec DC-3 reversibility) |
+| 4 | happy | AVAILABLE → REMOVED |
+| 5 | error | listing not found → LISTING_NOT_FOUND |
+| 6 | error | non-owner → LISTING_NOT_FOUND (anti-enumeration) |
+| 7 | error | REMOVED → AVAILABLE → INVALID_STATUS_TRANSITION (terminal) |
+| 8 | error | self-transition AVAILABLE → AVAILABLE → INVALID_STATUS_TRANSITION |
+
+The remaining 4 happy edges (AVAILABLE→SOLD, RESERVED→AVAILABLE, RESERVED→REMOVED, SOLD→REMOVED) are covered by integration tests in T22/T23 and demo milestone #6.
+
+- [ ] **Step 2: Run test, expect compile failure**
+
+```bash
+./mvnw -Dtest=ListingServiceChangeStatusTest test
+```
+Expected: COMPILE FAIL — `changeStatus` method doesn't exist.
+
+- [ ] **Step 3: Add `changeStatus` to `ListingService`**
+
+```
+private static final Map<ListingStatus, Set<ListingStatus>> ALLOWED_TRANSITIONS =
+    Map.of(
+        AVAILABLE, Set.of(RESERVED, SOLD, REMOVED),
+        RESERVED,  Set.of(AVAILABLE, SOLD, REMOVED),
+        SOLD,      Set.of(AVAILABLE, REMOVED),
+        REMOVED,   Set.of()
+    );
+
+@Transactional
+changeStatus(User currentUser, Long id, ListingStatus newStatus) -> ListingResponse:
+  1. listings.findById(id):
+       empty -> throw LISTING_NOT_FOUND
+  2. listing.owner.id != currentUser.id -> throw LISTING_NOT_FOUND
+  3. !ALLOWED_TRANSITIONS.get(listing.status).contains(newStatus)
+       -> throw INVALID_STATUS_TRANSITION
+  4. listing.setStatus(newStatus); save; return ListingResponse.from
+```
+
+- [ ] **Step 4: Run service unit test**
+
+```bash
+./mvnw -Dtest=ListingServiceChangeStatusTest test
+```
+Expected: PASS — 8/8 green.
+
+- [ ] **Step 5: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 82 + 8 = 90 tests green.
+
+- [ ] **Step 6: Append D-50 to engineering journal**
+
+FSM design: 4 states / 8 edges / SOLD reversibility (spec DC-3). EnumMap-style `Map.of(...)` chosen over if/else chain for direct table-to-code correspondence. Brief retrospective on the three `ListingService` public methods sharing the same validation chain shape (existence → ownership → business).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git commit -m "feat(backend): ListingService.changeStatus + FSM table (4 states, 8 transitions)"
+```
+### Task T15 — `ListingService.listMine` + `getOne` + `remove` + 8 unit tests
+
+> **Idempotent DELETE note:** Spec §4.6 says DELETE is "equivalent to PATCH(REMOVED)" but the errors list omits `INVALID_STATUS_TRANSITION`, implying DELETE is idempotent. `ListingService.remove` therefore implements its own minimal logic (existence → ownership → if not REMOVED, set status and save; else noop) instead of delegating to `changeStatus` (which would throw on already-REMOVED per FSM).
+
+> **Permission matrix for `getOne`:** owner sees any status including REMOVED; non-owner gets `LISTING_NOT_FOUND` for REMOVED, sees other states normally (Epic 3 will further restrict).
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/ListingService.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/ListingServiceQueryTest.java` (name aligns with spec §8.3 even though `remove` is also tested here)
+
+- [ ] **Step 1: Write the failing unit test (8 cases)**
+
+| # | Method | Case |
+|---|---|---|
+| 1 | `listMine` | default (no status + !includeRemoved) → calls `findByOwnerAndStatusNot(REMOVED, pageable)` |
+| 2 | `listMine` | with `statusFilter=AVAILABLE` → calls `findByOwnerAndStatus(AVAILABLE, pageable)` |
+| 3 | `listMine` | `includeRemoved=true` (no statusFilter) → calls `findByOwner(pageable)` |
+| 4 | `getOne` | listing not found → `LISTING_NOT_FOUND` |
+| 5 | `getOne` | owner sees own REMOVED listing (spec §4.3) |
+| 6 | `getOne` | non-owner sees REMOVED → `LISTING_NOT_FOUND` (spec §4.3) |
+| 7 | `remove` | happy path AVAILABLE → REMOVED, `save` called |
+| 8 | `remove` | idempotent noop on already-REMOVED, `save` NOT called |
+
+- [ ] **Step 2: Run, expect compile failure**
+
+- [ ] **Step 3: Add the 3 methods to `ListingService`**
+
+```
+@Transactional(readOnly = true)
+listMine(User currentUser, Pageable pageable, ListingStatus statusFilter, boolean includeRemoved):
+  Page<Listing> page;
+  if (statusFilter != null)
+    page = listings.findByOwnerAndStatus(currentUser, statusFilter, pageable);
+  else if (!includeRemoved)
+    page = listings.findByOwnerAndStatusNot(currentUser, REMOVED, pageable);
+  else
+    page = listings.findByOwner(currentUser, pageable);
+  return PagedListings.from(page);
+
+@Transactional(readOnly = true)
+getOne(User currentUser, Long id):
+  listing = listings.findById(id) -> LISTING_NOT_FOUND if absent
+  isOwner = listing.owner.id == currentUser.id
+  if listing.status == REMOVED && !isOwner -> LISTING_NOT_FOUND
+  return ListingResponse.from(listing)
+
+@Transactional
+remove(User currentUser, Long id):
+  listing = listings.findById(id) -> LISTING_NOT_FOUND if absent
+  if listing.owner.id != currentUser.id -> LISTING_NOT_FOUND
+  if listing.status != REMOVED:
+    listing.setStatus(REMOVED); save
+  // else idempotent noop
+```
+
+- [ ] **Step 4: Run service test alone**
+- [ ] **Step 5: Run full suite** (90 + 8 = 98 expected)
+- [ ] **Step 6: Journal D-51** (idempotent-DELETE design + Phase 1 service-layer retrospective)
+- [ ] **Step 7: Commit**
+### Task T16 — `ListingController` 6 endpoints (no image yet) + 3 sanity integration tests
+
+> **Endpoint count corrected to 6**: spec §4.1–§4.6 list `POST` / `GET /me` / `GET /{id}` / `PUT` / `PATCH /status` / `DELETE`. Plan was mis-numbered as 5 from inception.
+
+> **Security config note:** Spec §7.7 prescribes a SecurityConfig update, but Epic 1's existing rule `.requestMatchers("/api/**").authenticated()` already covers `/api/listings/**`. No change required here.
+
+> **Phase boundary**: T16 ships JSON request bodies only. T19 upgrades POST/PUT to multipart. `imagePath` is hardcoded to `"listings/placeholder.jpg"` for create; `newImagePath` is `null` for update (preserves the existing path).
+
+**Files:**
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/controller/ListingController.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/controller/ListingControllerIntegrationTest.java`
+
+- [ ] **Step 1: Create `ListingController` with 6 endpoints**
+
+| HTTP | Path | Method | Notes |
+|---|---|---|---|
+| POST | `/api/listings` | `create` | `@RequestBody @Valid CreateListingRequest`; placeholder imagePath; 201 Created |
+| GET | `/api/listings/me` | `listMine` | query params: page=0, status?, sort=CREATED_DESC, includeRemoved=false; pageSize fixed at 12 |
+| GET | `/api/listings/{id}` | `getOne` | 200 OK |
+| PUT | `/api/listings/{id}` | `update` | `@RequestBody @Valid UpdateListingRequest`; newImagePath=null; 200 OK |
+| PATCH | `/api/listings/{id}/status` | `changeStatus` | `@RequestBody @Valid ChangeStatusRequest`; 200 OK |
+| DELETE | `/api/listings/{id}` | `remove` | 204 No Content |
+
+Inject `ListingService` and `UserRepository`. Use `users.getReferenceById(principal.userId())` to materialize the User reference without an extra DB roundtrip. `mapSort(String)` switch maps `CREATED_DESC / CREATED_ASC / PRICE_DESC / PRICE_ASC` to Spring `Sort`.
+
+- [ ] **Step 2: Write `ListingControllerIntegrationTest` with 3 sanity cases**
+
+Extends `AbstractIntegrationTest`. Uses register/login helpers same shape as `AuthControllerIntegrationTest`.
+
+1. `createAndListMineRoundTrip` — register + login → POST listing → GET /me sees the new listing with correct fields.
+2. `nonOwnerGetOneReturnsNotFound` — owner creates listing, stranger tries GET → 404 `LISTING_NOT_FOUND`.
+3. `deleteIsIdempotent` — owner DELETE a listing → 204 → DELETE again → still 204 (spec §4.6).
+
+Full coverage of all endpoints' edge cases is deferred to T22/T23 (18-test integration suite).
+
+- [ ] **Step 3: Run integration test alone**
+
+```bash
+./mvnw -Dtest=ListingControllerIntegrationTest test
+```
+Expected: 3/3 green.
+
+- [ ] **Step 4: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 99 + 3 = 102 green.
+
+- [ ] **Step 5: Append D-53 to engineering journal**
+
+Three threads:
+- Controller wiring: AuthPrincipal → User reference via `getReferenceById` (no extra query).
+- Sort string → Sort mapping at controller boundary; service stays Pageable-only.
+- Phase 1 retrospective: 16 commits / 5 phase tasks since T5; **Demo milestone #6 unlocked**.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git commit -m "feat(backend): ListingController 6 endpoints + 3 sanity integration tests (Phase 1 complete)"
+```
+
+**Demo milestone #6 unlocks here. Hand control to the user for Postman walk-through (per `feedback_handson_demo.md`).**
+
+*All tasks above to be expanded with TDD steps, exact file paths, code blocks, run commands, and commit messages.*
+
+**Demo milestone #6:** Postman walks the 6 endpoints — create (no image yet), list-mine, get-one, update, change-status (all 8 legal transitions per spec DC-3), delete.
+
+---
+
+## Phase 2 — Image upload + rate limits
+
+### Task T17 — `ImageStorageService` interface + `LocalImageStorageService` implementation (5-step validation, magic-number, UUID filenames, traversal defenses)
+### Task T18 — `LocalImageStorageServiceTest` — unit + component tests covering all validation branches
+### Task T19 — Upgrade `ListingController` POST/PUT to multipart; wire image storage
+### Task T20 — `GET /api/uploads/listings/{filename}` — owner check, cache headers, traversal guard
+### Task T21 — Wire 5 rate-limit checks into write endpoints (create / update / status / delete / image-bytes)
+
+*Detailed steps to be expanded.*
+
+**Demo milestone #7:** Real image uploaded via Postman; browser GET renders the image; 21 consecutive create requests trigger `429`.
+
+---
+
+## Phase 3 — Backend integration tests + journal
+
+### Task T22 — `ListingControllerIntegrationTest` first batch — create / list / get / update (8 tests)
+### Task T23 — `ListingControllerIntegrationTest` second batch — status / delete / image / categories (10 tests)
+### Task T24 — Engineering journal append D-38..D-50 + Phase A retrospective
+
+*Detailed steps to be expanded.*
+
+**Demo milestone #8:** `./mvnw test` reports 60+ tests passing.
+
+---
+
+## Phase 4 — Frontend infrastructure + shared components
+
+### Task T25 — Install Vitest + React Testing Library + MSW + Playwright; create config files and a smoke test
+### Task T26 — Extend `apiClient` with `postForm` / `putForm` for multipart + unit tests
+### Task T27 — `api/listings.ts` + `api/categories.ts` — types and 7 endpoint wrappers + unit tests
+### Task T28 — `validateImageClientSide` helper + `i18n/listings.ts` copy table + unit tests
+### Task T29 — `StatusBadge` + `Spinner` + `EmptyState` + `Pagination` shared components + component tests
+### Task T30 — `ImagePicker` component (5 MB / MIME pre-check, thumbnail, replace) + component tests
+### Task T31 — `ConfirmDialog` shared component (focus trap, Esc, a11y) + component tests
+### Task T32 — `useOptimisticStatus` + `useListings` hooks + unit tests
+
+*Detailed steps to be expanded.*
+
+---
+
+## Phase 5 — Frontend pages
+
+### Task T33 — `ListingForm` shared component (Create / Edit / readonly modes, validation, dirty-detection, unsaved-changes guard) + component tests
+### Task T34 — `ListingCard` (4-status quick-action sets, optimistic update via `useOptimisticStatus`) + component tests
+### Task T35 — `CreateListingPage` + component test + route wiring
+### Task T36 — `MyListingsPage` (loading / empty / error / items, paging, filtering) + component test + route wiring
+### Task T37 — `ListingDetailPage` (owner read-only view, large image, status toolbar) + component test + route wiring
+### Task T38 — `EditListingPage` (prefill via `getOne`, REMOVED read-only banner) + component test + route wiring
+### Task T39 — `Navbar` add "My Listings" link; full route assembly in `App.tsx`
+### Task T40 — Frontend component-test review + coverage report generation
+
+*Detailed steps to be expanded.*
+
+**Demo milestone #9 (key):** Full browser flow — register → login → create listing with image → My Listings → detail → edit → status changes → delete. This is the supervisor demo for Epic 2.
+
+---
+
+## Phase 6 — E2E + documentation
+
+### Task T41 — Playwright specs: `create-flow` + `edit-flow` + `status-flow`
+### Task T42 — Playwright specs: `permission` (IDOR) + `image-leak` (§7.5)
+### Task T43 — `docs/manual-e2e-epic2.md` mirroring Epic 1's style
+### Task T44 — Engineering journal close-out + ROADMAP / dev-roadmap.md mark M3 complete + prepare merge to main
+
+*Detailed steps to be expanded.*
+
+**Demo milestone #10 (sealing):** `npm run e2e` — all 5 Playwright specs green; manual checklist passes. Epic 2 sealed and ready to merge into main.
+
+---
+
+## Notes for the implementer
+
+- **TDD throughout** — every backend service test is written *before* the implementation. The test runs, fails red, then the implementation is added until it passes green. Commit at green.
+- **One commit per task** — keep `git log --oneline` readable as a project narrative; matches Epic 1's cadence (24 task-shaped commits per Epic 1).
+- **Engineering journal** — append a new `D-N` decision entry whenever a non-obvious choice is made (Epic 1 collected D-1..D-37; Epic 2 starts at D-38). Bump the journal pointer commit after the task that produced new entries.
+- **Demo milestones** — at each milestone, hand control to the user for the manual demo (per `feedback_handson_demo.md`). Don't auto-run Postman / browser tests at these checkpoints.
+- **Comprehensive over minimal** — when in doubt, choose the more complete option (per `feedback_prefer_complete.md`).
+
+## Plan rollout strategy
+
+This file currently contains the **task outline** for all 44 tasks. Each task body will be expanded one phase at a time, in dialogue with the user, before that phase's implementation begins. The expansion fills in: exact file paths, full code blocks for every step, exact run commands with expected output, and explicit commit messages.
+
+Expansion order: Phase 0 → user reviews → Phase 0 implementation → Phase 1 expansion → Phase 1 implementation → ... and so on.

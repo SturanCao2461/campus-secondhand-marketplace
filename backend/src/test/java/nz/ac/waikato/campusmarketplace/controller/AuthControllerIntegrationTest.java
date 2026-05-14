@@ -156,6 +156,33 @@ class AuthControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
+    @Test
+    void loginRateLimitReturns429WithRetryAfter() {
+        register("ratelimit-target@students.waikato.ac.nz", "Pass1234", "RLTarget");
+
+        // 5 wrong-password attempts to trigger the limit (5 fails / 15 min).
+        for (int i = 0; i < 5; i++) {
+            ResponseEntity<JsonNode> r = postJson("/api/auth/login", Map.of(
+                    "email", "ratelimit-target@students.waikato.ac.nz",
+                    "password", "WrongPass" + i
+            ));
+            assertThat(r.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        }
+
+        // 6th attempt: should be blocked with 429 + Retry-After.
+        ResponseEntity<JsonNode> blocked = postJson("/api/auth/login", Map.of(
+                "email", "ratelimit-target@students.waikato.ac.nz",
+                "password", "WrongPass6"
+        ));
+        assertThat(blocked.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(blocked.getBody().get("code").asText()).isEqualTo("TOO_MANY_ATTEMPTS");
+
+        String retryAfter = blocked.getHeaders().getFirst("Retry-After");
+        assertThat(retryAfter).isNotNull();
+        long seconds = Long.parseLong(retryAfter);
+        assertThat(seconds).isBetween(1L, 900L);
+    }
+
     private ResponseEntity<JsonNode> postJson(String path, Map<String, String> body) {
         return postJson(path, body, JsonNode.class);
     }
