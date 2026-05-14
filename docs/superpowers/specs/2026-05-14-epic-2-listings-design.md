@@ -456,9 +456,128 @@ Returns the raw image bytes.
 
 ---
 
-## (Sections 5–8 to be added incrementally as the design discussion progresses.)
+## 5. Image Upload
 
-- §5 Image Upload Detail — multipart 处理、文件名生成、磁盘布局、安全（MIME/大小校验）
+Image upload is the only place in Epic 2 that introduces binary IO over user-supplied data, so it deserves a dedicated security design. This section defines the multipart handling flow, the on-disk layout, and the validation chain.
+
+### 5.1 Endpoint shape
+
+`POST /api/listings` and `PUT /api/listings/{id}` accept `multipart/form-data`:
+- Text fields (`title`, `description`, …) as parts.
+- The image as a part with `name="image"`; `Content-Type` is filled in automatically by the browser (e.g. `image/jpeg`).
+
+Spring Boot binds the `image` part to a `MultipartFile` parameter.
+
+### 5.2 Validation chain (inside `ImageStorageService.store()`)
+
+Checks run in order; any failure throws `ApiException(MISSING_IMAGE)` or `ApiException(INVALID_IMAGE)`:
+
+1. **Presence** — `MultipartFile == null` or `isEmpty()` → `MISSING_IMAGE` (only on Create; an Edit without an image part is legal).
+2. **Size cap** — `file.getSize() > 5 * 1024 * 1024` (5 MB) → `INVALID_IMAGE`.
+3. **Declared content-type whitelist** — must be one of `image/jpeg`, `image/png`, `image/webp`; otherwise `INVALID_IMAGE`.
+4. **Magic-number check on the actual bytes** — read the leading bytes and confirm the file *really is* what it claims. Defends against a `.jpg` filename whose contents are an `.exe` or arbitrary binary.
+   - JPEG: starts with `FF D8 FF`.
+   - PNG:  starts with `89 50 4E 47 0D 0A 1A 0A`.
+   - WebP: starts with `52 49 46 46 ?? ?? ?? ?? 57 45 42 50`.
+5. **Decodable as an image** — `ImageIO.read(InputStream)` must not return null. Catches "declared as JPEG but the bytes are corrupted".
+6. *(Future, V2)* Pixel dimension cap.
+
+Step 3 is what the client *says*; step 4 is what the bytes *prove*. The two layers together stop the classic "rename .exe to .jpg" attack — the browser sets `Content-Type` from the extension, but the magic number doesn't lie.
+
+### 5.3 Filename generation
+
+After the file is accepted, the user's `originalFilename` is **never** retained. Original filenames are an attack vector: path traversal (`../../../etc/passwd`), shell metacharacters, Windows reserved names (`CON.jpg`).
+
+A new filename is computed as `UUID + detected extension`:
+```java
+String ext = switch (detectedFormat) {
+    case JPEG -> ".jpg";
+    case PNG  -> ".png";
+    case WEBP -> ".webp";
+};
+String filename = UUID.randomUUID() + ext; // e.g. "3f5a2b1e-...-c9d4.jpg"
+```
+
+UUID v4 collisions are practically impossible. The extension comes from the format detected in §5.2 step 4 — never from the original filename.
+
+### 5.4 On-disk layout
+
+```
+<app.upload.root>/         # configuration property; defaults to ./uploads
+└── listings/              # subdirectory per resource type; future avatars/ etc.
+    ├── 3f5a2b1e-...-c9d4.jpg
+    ├── b8e7d6c5-...-1a2f.png
+    └── ...
+```
+
+**Why a flat directory rather than further sharding**: UUID v4 distributes filenames uniformly, listings have at most one image each, so the projected file count is in the low thousands. If the count crosses ~100 000 in the future, a two-level fan-out (`listings/3f/3f5a2b1e-…jpg`) avoids inode pressure on a single directory.
+
+The DB column `image_path` stores the **relative** path (`"listings/3f5a2b1e-...-c9d4.jpg"`). The absolute path is `<app.upload.root> + image_path`.
+
+### 5.5 Configuration (`application-*.properties`)
+
+```properties
+# Spring multipart limits (must be >= the §5.2 step-2 cap, otherwise that check never fires)
+spring.servlet.multipart.max-file-size=10MB
+spring.servlet.multipart.max-request-size=10MB
+
+# Application-defined upload root
+app.upload.root=./uploads
+```
+
+The `dev` profile uses the relative path `./uploads` (under the project root); `.gitignore` excludes the `uploads/` directory. The `prod` profile uses an absolute path such as `/var/lib/campusmarket/uploads`, and the deployment runbook will `rsync` that directory in backups.
+
+### 5.6 Serving files (`GET /api/uploads/listings/{filename}`)
+
+**Why a controller, not Spring's `ResourceHandler`**: this Epic requires authentication for image access, so the static-resource path won't suffice. The controller is responsible for the security check before reading bytes.
+
+```java
+@GetMapping("/api/uploads/listings/{filename:.+}")
+public ResponseEntity<Resource> serveImage(@PathVariable String filename) {
+    // 1. Validate filename: must not contain "/", "\\", or ".." (path-traversal guard).
+    // 2. Resolve absolute path and verify it stays under app.upload.root (defense in depth).
+    // 3. Stream the file with Content-Type and Cache-Control headers.
+}
+```
+
+Key defenses:
+- The path-variable regex `{filename:.+}` lets the value keep its dot extension (Spring otherwise truncates after the first `.`).
+- An explicit reject list (`..`, `/`, `\\`) plus a strict whitelist (UUID + extension only) is the first line.
+- `Path.toRealPath().startsWith(uploadRoot.toRealPath())` is the second line — even if the syntactic checks slip, the resolved physical path must remain inside the upload root.
+
+### 5.7 `ImageStorageService` interface
+
+```java
+public interface ImageStorageService {
+    /**
+     * Validates and stores the uploaded image.
+     * @return relative path (e.g. "listings/abc-123.jpg")
+     */
+    String store(MultipartFile file);
+
+    /** Resolves a stored image to a Resource for serving. */
+    Resource load(String relativePath);
+}
+```
+
+Implementations:
+- `LocalImageStorageService` — the only implementation in this Epic; writes under `app.upload.root`.
+- `S3ImageStorageService` / `R2ImageStorageService` can be added later without touching business code (DC-1).
+
+### 5.8 Edge-case ledger
+
+| Situation | Handling |
+|---|---|
+| Edit uploads a new image | Write the new file, update `image_path`; the old file stays on disk (DC-6). |
+| Edit omits the image | Keep the existing `image_path`; disk is untouched. |
+| Listing transitions to `REMOVED` | The image stays on disk — simpler and avoids accidental deletion; disk cleanup is a future Epic. |
+| UUID already exists | Probability ~0; on collision, regenerate the UUID once. A second collision returns `500`. |
+| Upload times out / client disconnects | Spring throws `MultipartException`, which `GlobalExceptionHandler` maps to `INVALID_IMAGE`. |
+
+---
+
+## (Sections 6–8 to be added incrementally as the design discussion progresses.)
+
 - §6 Frontend Pages — My Listings / Create / Edit 页面 + 路由 + 表单 / 状态切换 UI
 - §7 Security & Permissions — owner-only 校验位置、错误码、防 IDOR
 - §8 Testing Strategy — 单元 / 组件 / 集成 三层测试边界
