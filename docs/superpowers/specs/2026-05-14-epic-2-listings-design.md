@@ -22,7 +22,7 @@
 - 分类（独立 `categories` 表 + 8 个种子分类）
 - Listing 字段集合（详见 §3 Data Model）
 - 前端：My Listings 页、Create 页、Edit 页（共 3 个新页面）
-- 后端：6 个 endpoint，全部需要登录，仅 owner 可改自己的 listing
+- 后端：8 个 endpoint，全部需要登录，写操作仅 owner 可改自己的 listing（详见 §4 API Contract、§7 Security）
 
 ### 1.2 Out of Scope（推迟到 Epic 3 或更后）
 
@@ -452,8 +452,8 @@ This endpoint requires authentication; the list is identical for every signed-in
 Returns the raw image bytes.
 
 **Notes**:
-- In this Epic the upload endpoint requires authentication (`requestMatchers("/api/uploads/**").authenticated()`).
-- Epic 3 will relax this to `permitAll` when public browsing arrives; listing detail and edit are still owner-only here.
+- In this Epic the upload endpoint requires authentication **and** an owner check — see §7.5 for the implementation. Non-owners receive `404 LISTING_NOT_FOUND` (same anti-enumeration treatment as listing access).
+- Epic 3 will relax this to `permitAll` for `AVAILABLE` listings only; listing detail and edit are still owner-only here.
 - `Cache-Control: max-age=86400` — images are content-addressed by UUID filename and effectively immutable, so a 24-hour client cache is safe.
 
 ---
