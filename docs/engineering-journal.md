@@ -1039,4 +1039,23 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 1 sealed (D-42..D-55). 102 backend tests green; full listing CRUD shipped. Demo milestone #6 ready for hands-on walkthrough; Phase 2 (image upload + rate limits) is next.*
+### D-56 — Epic 2 backend sealed: 128 tests, 18 integration tests cover every endpoint + edge case
+
+**Date / where** Epic 2 Phase 3 T22/T23, 2026-05-15
+**Retrospective** Phase 3 adds 15 integration tests to the 3 sanity cases from T16, bringing the `ListingControllerIntegrationTest` to 18 cases. Coverage now spans:
+- **Create**: invalid category (400), SELL without price (400), GIVEAWAY ignores price, unauthenticated (401), round-trip create+listMine.
+- **Get one**: full response fields verified.
+- **Update**: fields change + image preserved; update REMOVED listing (400 LISTING_REMOVED).
+- **Status FSM**: AVAILABLE→RESERVED→SOLD chain, SOLD→AVAILABLE reversibility, REMOVED→AVAILABLE invalid (400 INVALID_STATUS_TRANSITION).
+- **Delete**: idempotent (204 twice), non-owner (404 anti-enumeration).
+- **List mine**: status filter returns correct subset.
+- **Image serving**: owner gets 200 + Cache-Control; non-owner gets 404.
+- **Categories**: 8 seeded categories returned.
+
+All tests use real multipart requests with a 1×1 JPEG generated in-memory. The `updateListing` helper supports optional image replacement. Total backend test count: **128** (32 service unit + 11 image storage + 18 listing integration + 9 auth integration + 7 listing repository + 4 schema + 7 DTO + 3 category + 37 other).
+
+> 💡 中文要点：Phase 3 把集成测试从 3 个 sanity case 补到 18 个，覆盖所有 endpoint 的 happy path + error path。每个 spec §4 的错误码都有对应的集成测试断言。128 个测试全绿 = 后端质量门关闭。论文答辩时"你怎么保证质量"的回答：128 个自动化测试 + 每个 commit 全量跑通。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 3 complete (D-56). 128 backend tests green; full integration test coverage for all listing endpoints. Frontend listing pages live. Next: Phase 6 (E2E + documentation).*
