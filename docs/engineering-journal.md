@@ -953,4 +953,15 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T12 complete (D-42..D-48). 75 backend tests green; `Listing` entity, derived queries, 6 DTOs, 8 listing `ErrorCode`s, and `ListingService.create` shipped.*
+### D-49 — Anti-enumeration in write paths: non-owner edits return `404 LISTING_NOT_FOUND`, never `403`
+
+**Date / where** Epic 2 Phase 1 T13, 2026-05-15
+**Choice** `ListingService.update` returns `LISTING_NOT_FOUND` (HTTP 404) in two distinct cases: (a) the id does not exist in the DB, and (b) the id exists but the authenticated user is not the owner. The two failure responses are byte-for-byte identical. `NOT_LISTING_OWNER` (HTTP 403) is reserved for client-side preconditions and a future admin view; the public API in Epic 2 never emits it. Spec §7.4 mandates the validation chain order — existence → ownership → status → business rules — so the two indistinguishable failures appear at the same checkpoint with the same response shape.
+**Why** Same anti-enumeration rationale as Epic 1 D-11 / D-14 / D-16, but this is the first time the project applies it to a *write* operation rather than a read. If 404 and 403 differed for write paths too, an attacker scanning ids could distinguish "this id is unused" from "this id exists, owned by someone else". The latter is a leak — it reveals that the id is *taken*, which when combined with timing or other side channels can reveal listing existence beyond what the API meant to expose. Preserving the same 404 shape across both unauthorized read and unauthorized write closes the side channel.
+**Trade-off accepted** Legitimate users who fat-finger the id of someone else's listing get a confusing "Listing not found" error instead of "Not your listing." This is a UX cost — but writes are typically initiated from the owner's listing list, so the wrong-id case is exotic. Frontend never *constructs* an arbitrary id to PUT; it only acts on listings it already enumerated via `GET /api/listings/me`. The error message is therefore mostly a defensive fallback the user shouldn't reach.
+
+> 💡 中文要点：写路径上的反枚举跟读路径同款—— 非 owner 改人家的 listing 也返 `404 LISTING_NOT_FOUND` 而不是 `403 NOT_LISTING_OWNER`。**两种失败响应字节级一致**：要么这个 id 根本没人用，要么有人用但不是你的，攻击者扫 id 时分不出来。代价：用户不小心输错 id 会看到"未找到"提示而不是"不是你的"。但写操作通常都是从"我的 listing"列表点出来的，正常用户走不到这条路径——是防御性兜底，不是常规 UX 路径。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T13 complete (D-42..D-49). 82 backend tests green; `Listing` entity, derived queries, 6 DTOs, 8 listing `ErrorCode`s, and `ListingService.create` + `update` (with anti-enumeration) shipped.*

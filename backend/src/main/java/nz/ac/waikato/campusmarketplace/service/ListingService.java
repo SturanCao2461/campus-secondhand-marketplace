@@ -2,6 +2,7 @@ package nz.ac.waikato.campusmarketplace.service;
 
 import nz.ac.waikato.campusmarketplace.dto.CreateListingRequest;
 import nz.ac.waikato.campusmarketplace.dto.ListingResponse;
+import nz.ac.waikato.campusmarketplace.dto.UpdateListingRequest;
 import nz.ac.waikato.campusmarketplace.entity.Category;
 import nz.ac.waikato.campusmarketplace.entity.Listing;
 import nz.ac.waikato.campusmarketplace.entity.ListingStatus;
@@ -29,21 +30,8 @@ public class ListingService {
 
     @Transactional
     public ListingResponse create(User currentUser, CreateListingRequest req, String imagePath) {
-        Category category = categories.findByCode(req.categoryCode())
-                .filter(Category::getActive)
-                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_CATEGORY,
-                        "Category is not available."));
-
-        if (req.listingType() == ListingType.SELL) {
-            if (req.price() == null || req.price().signum() <= 0) {
-                throw new ApiException(ErrorCode.INVALID_PRICE,
-                        "Selling listings must have a positive price.");
-            }
-        }
-        if (req.originalPrice() != null && req.originalPrice().signum() <= 0) {
-            throw new ApiException(ErrorCode.INVALID_PRICE,
-                    "Original price must be positive when supplied.");
-        }
+        Category category = resolveActiveCategory(req.categoryCode());
+        validatePrice(req.listingType(), req.price(), req.originalPrice());
 
         BigDecimal effectivePrice = req.listingType() == ListingType.GIVEAWAY ? null : req.price();
         boolean effectiveNegotiable = req.negotiable() != null && req.negotiable();
@@ -67,4 +55,64 @@ public class ListingService {
         Listing saved = listings.save(draft);
         return ListingResponse.from(saved);
     }
+
+    @Transactional
+    public ListingResponse update(User currentUser, Long id, UpdateListingRequest req, String newImagePath) {
+        Listing listing = listings.findById(id)
+                .orElseThrow(() -> new ApiException(ErrorCode.LISTING_NOT_FOUND,
+                        "Listing not found."));
+
+        // spec §7.3 / §7.4: non-owner is hidden as LISTING_NOT_FOUND, not NOT_LISTING_OWNER.
+        if (!listing.getOwner().getId().equals(currentUser.getId())) {
+            throw new ApiException(ErrorCode.LISTING_NOT_FOUND, "Listing not found.");
+        }
+        if (listing.getStatus() == ListingStatus.REMOVED) {
+            throw new ApiException(ErrorCode.LISTING_REMOVED,
+                    "This listing has been removed and cannot be edited.");
+        }
+
+        Category category = resolveActiveCategory(req.categoryCode());
+        validatePrice(req.listingType(), req.price(), req.originalPrice());
+
+        BigDecimal effectivePrice = req.listingType() == ListingType.GIVEAWAY ? null : req.price();
+        boolean effectiveNegotiable = req.negotiable() != null && req.negotiable();
+
+        listing.setTitle(req.title());
+        listing.setDescription(req.description());
+        listing.setCategory(category);
+        listing.setListingType(req.listingType());
+        listing.setPrice(effectivePrice);
+        listing.setOriginalPrice(req.originalPrice());
+        listing.setCondition(req.condition());
+        listing.setMeetAt(req.meetAt());
+        listing.setNegotiable(effectiveNegotiable);
+        listing.setReasonForSelling(req.reasonForSelling());
+        if (newImagePath != null) {
+            listing.setImagePath(newImagePath);
+        }
+
+        Listing saved = listings.save(listing);
+        return ListingResponse.from(saved);
+    }
+
+    private Category resolveActiveCategory(String code) {
+        return categories.findByCode(code)
+                .filter(Category::getActive)
+                .orElseThrow(() -> new ApiException(ErrorCode.INVALID_CATEGORY,
+                        "Category is not available."));
+    }
+
+    private void validatePrice(ListingType type, BigDecimal price, BigDecimal originalPrice) {
+        if (type == ListingType.SELL) {
+            if (price == null || price.signum() <= 0) {
+                throw new ApiException(ErrorCode.INVALID_PRICE,
+                        "Selling listings must have a positive price.");
+            }
+        }
+        if (originalPrice != null && originalPrice.signum() <= 0) {
+            throw new ApiException(ErrorCode.INVALID_PRICE,
+                    "Original price must be positive when supplied.");
+        }
+    }
 }
+

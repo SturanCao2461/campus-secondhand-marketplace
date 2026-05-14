@@ -804,6 +804,81 @@ Two lessons:
 git commit -m "feat(backend): ListingService.create + 8 new ErrorCode values"
 ```
 ### Task T13 — `ListingService.update` + 7 unit tests
+
+> **Anti-enumeration note:** Per spec §7.3 / §7.4, the public API in Epic 2 never emits `403 NOT_LISTING_OWNER`. Non-owner edits return `404 LISTING_NOT_FOUND` — indistinguishable from "id does not exist". The validation chain is strict: existence → ownership → status → business rules; first failure short-circuits.
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/ListingService.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/ListingServiceUpdateTest.java`
+
+- [ ] **Step 1: Write the failing unit test (7 cases)**
+
+Same Mockito + `mock()` static + JUnit-standard assertions style as `ListingServiceCreateTest`. Mock `CategoryRepository` + `ListingRepository`; capture saved entity; verify `never()` on early-rejection paths.
+
+Fixture: existing `Listing` (id=42, owner=user7, status=AVAILABLE, imagePath="listings/old.jpg"). `listings.findById(42L)` returns this fixture; `findById` of any other id returns empty.
+
+Test cases:
+1. Happy path **without** new image — title/description/price/etc. updated; `imagePath` unchanged; ListingResponse returned with `id=42`.
+2. Happy path **with** new image — `imagePath` replaced when `newImagePath != null`.
+3. Listing not found (`findById` empty) → `LISTING_NOT_FOUND`; never save.
+4. Non-owner (current user id ≠ owner id) → `LISTING_NOT_FOUND` (anti-enumeration); never save.
+5. Status is REMOVED → `LISTING_REMOVED`; never save.
+6. Unknown / inactive category → `INVALID_CATEGORY`; never save.
+7. SELL with `price=null` → `INVALID_PRICE`; never save.
+
+- [ ] **Step 2: Run test, expect compile failure**
+
+```bash
+./mvnw -Dtest=ListingServiceUpdateTest test
+```
+Expected: COMPILE FAIL — `update` method doesn't exist.
+
+- [ ] **Step 3: Add `update` to `ListingService`**
+
+```
+update(User currentUser, Long id, UpdateListingRequest req, String newImagePath) -> ListingResponse:
+  1. listings.findById(id):
+       empty -> throw LISTING_NOT_FOUND
+  2. listing.owner.id != currentUser.id -> throw LISTING_NOT_FOUND  (spec §7.3)
+  3. listing.status == REMOVED -> throw LISTING_REMOVED
+  4. categories.findByCode(req.categoryCode):
+       empty || !active -> throw INVALID_CATEGORY
+  5. if listingType == SELL && (price == null || price.signum() <= 0):
+       throw INVALID_PRICE
+  6. if originalPrice != null && originalPrice.signum() <= 0:
+       throw INVALID_PRICE
+  7. apply: title / description / category / listingType / price (null on GIVEAWAY) /
+            originalPrice / condition / meetAt / negotiable (null -> false) /
+            reasonForSelling
+     if newImagePath != null: listing.imagePath = newImagePath
+  8. save, return ListingResponse.from(saved)
+```
+
+`@Transactional` on the method.
+
+- [ ] **Step 4: Run service unit test**
+
+```bash
+./mvnw -Dtest=ListingServiceUpdateTest test
+```
+Expected: PASS — 7/7 green.
+
+- [ ] **Step 5: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 75 + 7 = 82 tests green.
+
+- [ ] **Step 6: Append D-49 to engineering journal**
+
+The 404-as-403 anti-enumeration decision in a write operation: same principle as Epic 1 D-11/D-14/D-16, but first time applied to a *write* path here. Worth a single decision entry.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git commit -m "feat(backend): ListingService.update with 404-as-403 anti-enumeration for non-owner edits"
+```
 ### Task T14 — `ListingService.changeStatus` + FSM table + 8 unit tests
 ### Task T15 — `ListingService.listMine` + `getOne` + `remove` + 7 unit tests
 ### Task T16 — `ListingController` 5 endpoints (no image yet) + Security config update
