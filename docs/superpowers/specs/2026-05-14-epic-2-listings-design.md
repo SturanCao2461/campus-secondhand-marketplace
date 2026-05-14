@@ -188,9 +188,113 @@ Service 层用一张表（`Map<Status, Set<Status>>`）校验合法转换，非�
 
 ---
 
-## (Sections 3–8 to be added incrementally as the design discussion progresses.)
+## 3. Data Model
 
-- §3 Data Model — `listings` 表 DDL，`categories` 表 DDL，索引策略
+### 3.1 MySQL `categories` table
+
+```sql
+CREATE TABLE categories (
+    id          BIGINT       PRIMARY KEY AUTO_INCREMENT,
+    code        VARCHAR(20)  NOT NULL UNIQUE,    -- program-stable identifier (BOOKS, ELECTRONICS, ...)
+    name_en     VARCHAR(40)  NOT NULL,           -- "Books & Textbooks"
+    name_zh     VARCHAR(40)  NOT NULL,           -- "书籍教材"
+    sort_order  INT          NOT NULL DEFAULT 0, -- ordering for the frontend dropdown
+    active      BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- seed data (initialised on application start or via Flyway / manual script)
+INSERT INTO categories (code, name_en, name_zh, sort_order) VALUES
+  ('BOOKS',       'Books & Textbooks',  '书籍教材',   10),
+  ('ELECTRONICS', 'Electronics',        '电子产品',   20),
+  ('FURNITURE',   'Furniture',          '家具',       30),
+  ('CLOTHING',    'Clothing & Bags',    '衣物鞋帽',   40),
+  ('KITCHEN',     'Kitchen & Home',     '厨房家用',   50),
+  ('SPORTS',      'Sports & Outdoors',  '运动器材',   60),
+  ('TICKETS',     'Tickets & Events',   '票务',       70),
+  ('OTHER',       'Other',              '其他',       99);
+```
+
+**Field constraints**:
+- `code` is all-uppercase English + underscore; it is the stable identifier used in API request/response bodies.
+- `name_en` / `name_zh` are display strings; they can change without affecting business logic.
+- When `active = FALSE`, the category cannot be selected for new listings, but existing references stay valid (backward-compatible).
+
+### 3.2 MySQL `listings` table
+
+```sql
+CREATE TABLE listings (
+    id                  BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    owner_id            BIGINT         NOT NULL,
+    title               VARCHAR(80)    NOT NULL,
+    description         VARCHAR(2000)  NOT NULL,
+    price               DECIMAL(10,2)  NULL,         -- NULL allowed when listing_type = GIVEAWAY
+    original_price      DECIMAL(10,2)  NULL,
+    category_id         BIGINT         NOT NULL,
+    image_path          VARCHAR(255)   NOT NULL,     -- relative path, e.g. "listings/abc-123.jpg"
+    status              VARCHAR(20)    NOT NULL DEFAULT 'AVAILABLE',
+                                                     -- AVAILABLE / RESERVED / SOLD / REMOVED
+    listing_type        VARCHAR(20)    NOT NULL DEFAULT 'SELL',
+                                                     -- SELL / GIVEAWAY
+    `condition`         VARCHAR(20)    NULL,         -- NEW / LIKE_NEW / GOOD / FAIR / POOR
+    meet_at             VARCHAR(100)   NULL,
+    negotiable          BOOLEAN        NOT NULL DEFAULT FALSE,
+    reason_for_selling  VARCHAR(100)   NULL,
+    created_at          DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                       ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at          DATETIME       NULL,         -- soft-delete column (kept consistent with users)
+
+    CONSTRAINT fk_listings_owner    FOREIGN KEY (owner_id)    REFERENCES users(id),
+    CONSTRAINT fk_listings_category FOREIGN KEY (category_id) REFERENCES categories(id)
+);
+
+CREATE INDEX idx_listings_owner   ON listings(owner_id);
+CREATE INDEX idx_listings_status  ON listings(status);
+CREATE INDEX idx_listings_created ON listings(created_at);
+```
+
+**Field-level decisions**:
+- **`status` and `condition` are `VARCHAR`, not MySQL `ENUM`** — JPA maps Java enums to `VARCHAR` with `@Enumerated(EnumType.STRING)` by default; this is the most readable, migration-friendly choice. MySQL's native `ENUM` type is awkward to evolve in Flyway.
+- **`condition` is backtick-quoted** — `CONDITION` is a reserved word in MySQL; omitting the backticks causes a syntax error. Worth logging as a small gotcha in the journal.
+- **`description VARCHAR(2000)` instead of `TEXT`** — keeps an upper bound, plays nicely with indexing and default-value semantics, and is still fully supported under `utf8mb4` in MySQL 8.
+- **Soft-delete column `deleted_at`** — kept for parity with the `users` table (Epic 1 D-7), but **not actively used** in this Epic. The `REMOVED` status already covers the "hidden from frontend" need. `deleted_at` is reserved for any future hard-delete pipeline.
+
+**Index strategy**:
+- `idx_listings_owner` — used by the "My Listings" page (`WHERE owner_id = ?`).
+- `idx_listings_status` — used by Epic 3's public list endpoint (`WHERE status = 'AVAILABLE'`); created up-front to avoid an index migration later.
+- `idx_listings_created` — supports the common `ORDER BY created_at DESC` sort.
+
+### 3.3 Entity relationships (ER diagram)
+
+```
+┌──────────┐         ┌────────────┐         ┌──────────────┐
+│  users   │ 1     N │  listings  │ N     1 │  categories  │
+├──────────┤────────►├────────────┤◄────────┤──────────────┤
+│ id (PK)  │         │ id (PK)    │         │ id (PK)      │
+│ email    │         │ owner_id   │         │ code         │
+│ nickname │         │ category_id│         │ name_en/zh   │
+│ ...      │         │ title      │         │ active       │
+└──────────┘         │ ...        │         └──────────────┘
+                     └────────────┘
+```
+
+- A user owns 0..N listings (via `owner_id`).
+- A listing belongs to exactly one category (via `category_id`, NOT NULL).
+- A category can be referenced by 0..N listings.
+
+### 3.4 JPA entity design notes (preview — full code lives in the implementation plan)
+
+- `Listing` entity is annotated `@Entity` + `@Table(name = "listings")`.
+- `Listing.status`, `Listing.condition`, `Listing.listingType` use `@Enumerated(EnumType.STRING)`.
+- Relationship to `User` is `@ManyToOne(fetch = FetchType.LAZY)` to avoid N+1 explosions when listing many rows.
+- Relationship to `Category` is also `@ManyToOne(fetch = FetchType.LAZY)`.
+- Timestamp columns rely on MySQL's `DEFAULT CURRENT_TIMESTAMP` / `ON UPDATE CURRENT_TIMESTAMP` — the same approach Epic 1 took for `users`, rather than `@PrePersist` / `@PreUpdate`.
+
+---
+
+## (Sections 4–8 to be added incrementally as the design discussion progresses.)
+
 - §4 API Contract — 6 个 endpoint 的 URL / 入参 / 出参 / 错误码
 - §5 Image Upload Detail — multipart 处理、文件名生成、磁盘布局、安全（MIME/大小校验）
 - §6 Frontend Pages — My Listings / Create / Edit 页面 + 路由 + 表单 / 状态切换 UI
