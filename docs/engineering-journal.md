@@ -1058,4 +1058,50 @@ All tests use real multipart requests with a 1×1 JPEG generated in-memory. The 
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 3 complete (D-56). 128 backend tests green; full integration test coverage for all listing endpoints. Frontend listing pages live. Next: Phase 6 (E2E + documentation).*
+## Epic 3 — Public Browsing, Search & Filter
+
+### D-57 — JPA Specifications over combinatorial derived queries for the browse endpoint
+
+**Date / where** Epic 3 Phase 0 T1, 2026-05-15
+**Choice** The public browse endpoint (`GET /api/listings`) uses `JpaSpecificationExecutor<Listing>` with composable `Specification<Listing>` predicates instead of Spring Data derived query method names. Five predicates compose via `.and()`: `hasStatusIn`, `titleContains`, `hasCategory`, `priceBetween`, `hasListingType`.
+**Why** The browse endpoint has 5 optional filters. All combinations of present/absent filters would require 2^5 = 32 derived query methods (or a subset with ugly names like `findByStatusInAndTitleContainingIgnoreCaseAndCategoryAndPriceBetweenAndListingType`). Specifications compose cleanly — each filter is a one-liner lambda that's independently readable and testable. The `Specification.and()` chain builds the WHERE clause dynamically at runtime based on which query params are non-null.
+**Trade-off accepted** Specifications are slightly more verbose than derived queries for simple single-filter cases (like the existing `findByOwner`). The project now uses both patterns: derived queries for owner-scoped reads (simple, fixed filters) and Specifications for the public browse (complex, dynamic filters). This is intentional — use the simplest tool that fits each case.
+
+> 💡 中文要点：公开浏览端点有 5 个可选过滤器，组合起来 32 种排列。用 Spring Data 的 `Specification` 模式：每个过滤器是一个独立的 lambda 谓词，用 `.and()` 链式组合。运行时根据哪些参数非空动态构建 WHERE 子句。比 32 个 derived query 方法名干净得多。项目现在两种模式并存：简单固定查询用 derived query，复杂动态查询用 Specification——按场景选最简工具。
+
+---
+
+### D-58 — Separate `/api/listings/{id}/detail` endpoint rather than relaxing the existing `getOne`
+
+**Date / where** Epic 3 Phase 0 T2, 2026-05-15
+**Choice** A new public endpoint `GET /api/listings/{id}/detail` serves listing detail without authentication. The existing `GET /api/listings/{id}` (authenticated, owner-privileged) remains unchanged.
+**Why** The existing `getOne` has owner-specific behavior: the owner sees their listing in *any* status including REMOVED. Relaxing it to public access would require conditional logic: "if user is authenticated AND is the owner, show REMOVED; otherwise hide it." This mixes two contracts in one method. A separate endpoint keeps each contract pure: `getOne` = owner view (all statuses, requires auth), `getDetail` = public view (non-REMOVED only, no auth). The frontend uses `getDetail` for the public browse flow and `getOne` for the owner's management flow — two different UX contexts, two different endpoints.
+**Trade-off accepted** Two endpoints serve similar data for the same resource. This is intentional REST design: different representations for different audiences. The alternative (one endpoint with conditional behavior) would be fewer lines but harder to reason about, harder to test, and harder to secure.
+
+> 💡 中文要点：不去"放宽"已有的 `getOne`（owner 视角，能看 REMOVED），而是新建 `getDetail`（公开视角，隐藏 REMOVED）。两个端点服务同一资源的不同表示——不同受众、不同契约、不同安全规则。混在一个方法里会引入"如果登录了且是 owner 则…否则…"的条件逻辑，难读难测难审计。
+
+---
+
+### D-59 — Image access relaxed from owner-only to status-based: non-REMOVED is public
+
+**Date / where** Epic 3 Phase 0 T3, 2026-05-15
+**Choice** `GET /api/uploads/listings/{filename}` now serves images publicly for listings whose status is AVAILABLE, RESERVED, or SOLD. Only REMOVED listing images still require owner authentication. The check is: resolve filename → find listing → if REMOVED and (no auth OR not owner) → 404; else serve.
+**Why** The browse page and public detail page need to display listing images without login. The previous owner-only check (Epic 2 D-53) was correct for a seller-only system but blocks the buyer experience. REMOVED images stay protected to honor the soft-delete contract: a user who "deletes" their listing expects its image to disappear from public view. The status-based check is the minimal relaxation that enables public browsing while preserving the REMOVED privacy guarantee.
+**Trade-off accepted** A non-owner can now view any non-REMOVED listing's image by guessing the UUID filename. This is acceptable because: (1) UUID v4 filenames are unguessable (122 bits of entropy); (2) the image is already visible on the public browse page anyway; (3) the only "private" images are REMOVED ones, which remain protected.
+
+> 💡 中文要点：图片访问从"仅 owner"放宽到"按状态"——非 REMOVED 的 listing 图片对所有人可见（因为公开浏览页本来就要显示它们），REMOVED 的图片仍然只有 owner 能看（尊重软删除契约）。UUID 文件名不可猜测（122 bit 熵），所以"知道 URL 就能看"不构成安全风险。
+
+---
+
+### D-60 — SecurityConfig: additive permitAll rules before the authenticated catch-all
+
+**Date / where** Epic 3 Phase 0 T4, 2026-05-15
+**Choice** Four new `permitAll` matchers added to SecurityConfig *before* the existing `.requestMatchers("/api/**").authenticated()` catch-all: `GET /api/listings`, `GET /api/listings/*/detail`, `GET /api/uploads/listings/**`, `GET /api/categories`. The catch-all rule and all Epic 1/2 authenticated endpoints remain unchanged.
+**Why** Spring Security evaluates request matchers in declaration order; first match wins. Adding public endpoints before the catch-all is purely additive — no existing behavior changes, no risk of accidentally exposing write endpoints. The alternative (restructuring the entire auth config into explicit per-endpoint rules) would be more "correct" but risks regressions in 8+ existing authenticated endpoints. The additive approach is the lowest-risk path for a thesis project where stability matters more than config elegance.
+**Lesson** When evolving a SecurityConfig, prefer additive changes (new rules before the catch-all) over restructuring. Each additive rule is independently auditable: "this specific path is public because of this specific line." A restructured config requires reading the entire block to understand what's public vs. authenticated.
+
+> 💡 中文要点：SecurityConfig 演进策略——**加法优于重构**。在 catch-all `.authenticated()` 规则前面加 4 行 `permitAll`，不动已有规则。Spring Security 按声明顺序匹配，先匹配先生效。每条新规则独立可审计："这个路径公开是因为这一行"。重构整个配置虽然更"正确"但风险高——8+ 个已有端点可能意外暴露。论文项目稳定性 > 配置美学。
+
+---
+
+*Last updated: 2026-05-15 — Epic 3 complete (D-57..D-60). 128 backend tests green; public browsing with search/filter/detail live. Milestones 1–4 all complete.*
