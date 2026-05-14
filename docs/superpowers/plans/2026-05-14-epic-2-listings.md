@@ -728,6 +728,81 @@ Two lessons:
 git commit -m "feat(backend): listing DTOs (3 request + 3 response) with validation and factories"
 ```
 ### Task T12 — `ListingService.create` + 8 unit tests
+
+> **Boundary note (2026-05-15):** Phase 1 is "no image yet" (plan overview L22-27). `ListingService.create` takes `String imagePath` as a third parameter from day one — Phase 1's T16 controller passes a placeholder; T19 (Phase 2) swaps in `ImageStorageService.store(file)`. Service signature is stable across the boundary; only the controller flips. T12 also adds the 8 new `ErrorCode` enum values from spec §4.0 in one shot, even though most are consumed by T13/T14/T15/T17 — keeps the enum-edit blast radius to a single commit.
+
+**Files:**
+- Modify: `backend/src/main/java/nz/ac/waikato/campusmarketplace/exception/ErrorCode.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/service/ListingService.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/service/ListingServiceCreateTest.java`
+
+- [ ] **Step 1: Write the failing unit test (8 cases)**
+
+Pure Mockito unit test (`@ExtendWith(MockitoExtension.class)`), mirroring the Epic 1 service test pattern (`AuthServiceLoginLogoutTest`). Mock `CategoryRepository` + `ListingRepository`; assert calls + thrown `ApiException` codes + saved entity field values.
+
+- [ ] **Step 2: Run test, expect compile failure**
+
+```bash
+./mvnw -Dtest=ListingServiceCreateTest test
+```
+Expected: COMPILE FAIL — `ListingService` and 8 new `ErrorCode` values missing.
+
+- [ ] **Step 3: Add 8 new `ErrorCode` enum values**
+
+```java
+LISTING_NOT_FOUND(HttpStatus.NOT_FOUND),
+NOT_LISTING_OWNER(HttpStatus.FORBIDDEN),
+INVALID_STATUS_TRANSITION(HttpStatus.BAD_REQUEST),
+LISTING_REMOVED(HttpStatus.BAD_REQUEST),
+INVALID_CATEGORY(HttpStatus.BAD_REQUEST),
+INVALID_IMAGE(HttpStatus.BAD_REQUEST),
+MISSING_IMAGE(HttpStatus.BAD_REQUEST),
+INVALID_PRICE(HttpStatus.BAD_REQUEST),
+```
+
+- [ ] **Step 4: Create `ListingService.create`**
+
+```
+create(User currentUser, CreateListingRequest req, String imagePath) -> ListingResponse:
+  1. categories.findByCode(req.categoryCode):
+       empty || !active  -> throw INVALID_CATEGORY
+  2. if req.listingType == SELL:
+       price == null || price.signum() <= 0  -> throw INVALID_PRICE
+  3. if req.originalPrice != null && originalPrice.signum() <= 0:
+       throw INVALID_PRICE
+  4. effectivePrice    = (listingType == GIVEAWAY) ? null : req.price
+  5. effectiveNegotiable = (req.negotiable != null) ? req.negotiable : false
+  6. listings.save(Listing.builder()...build())
+  7. return ListingResponse.from(saved)
+```
+
+`@Service` annotation, constructor injection, `@Transactional` on the create method.
+
+- [ ] **Step 5: Run service unit test**
+
+```bash
+./mvnw -Dtest=ListingServiceCreateTest test
+```
+Expected: PASS — 8/8 green.
+
+- [ ] **Step 6: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 67 + 8 = 75 tests green.
+
+- [ ] **Step 7: Append D-48 to engineering journal**
+
+Two lessons:
+- Why `imagePath` enters the service signature in Phase 1 already (stability across the Phase-1/Phase-2 boundary).
+- Why all 8 listing `ErrorCode` values land together even though most are consumed later (single source of truth, smaller commit noise).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git commit -m "feat(backend): ListingService.create + 8 new ErrorCode values"
+```
 ### Task T13 — `ListingService.update` + 7 unit tests
 ### Task T14 — `ListingService.changeStatus` + FSM table + 8 unit tests
 ### Task T15 — `ListingService.listMine` + `getOne` + `remove` + 7 unit tests

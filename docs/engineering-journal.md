@@ -942,4 +942,15 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T11 complete (D-42..D-47). 67 backend tests green; `Listing` entity, 4 indexes, derived queries, and 6 DTOs shipped.*
+### D-48 — `ListingService.create` takes `imagePath` from day one; all 8 listing `ErrorCode`s land together
+
+**Date / where** Epic 2 Phase 1 T12, 2026-05-15
+**Choice** `ListingService.create(User currentUser, CreateListingRequest req, String imagePath)` is the day-one signature. Phase 1's T16 controller will pass a placeholder string (`"listings/placeholder.jpg"`); Phase 2's T19 will replace that with `imageStorage.store(file)`. The service layer is *blind* to whether the path is a placeholder or a real upload — it just persists the string. Separately, all 8 listing `ErrorCode` values from spec §4.0 (`LISTING_NOT_FOUND`, `NOT_LISTING_OWNER`, `INVALID_STATUS_TRANSITION`, `LISTING_REMOVED`, `INVALID_CATEGORY`, `INVALID_IMAGE`, `MISSING_IMAGE`, `INVALID_PRICE`) were added to `ErrorCode.java` in this commit, even though only `INVALID_CATEGORY` and `INVALID_PRICE` are used in T12.
+**Why** *(imagePath in signature)*: stable APIs across phase boundaries are cheaper than refactors. If T16 used a 2-arg `create(User, CreateListingRequest)` and T19 had to retrofit a third parameter, every existing test, every controller call site, and the service contract itself would shift. Phase 2 adds *what fills the parameter*, not the parameter itself. *(All ErrorCodes together)*: enum edits surface in code review as "you touched this file again" noise. One commit defines the universe of listing errors, and downstream tasks (T13 / T14 / T15 / T17) reference codes that already exist. Removes 4 tiny commits whose only diff would be one line each.
+**Trade-off accepted** Adding 6 unused enum values is technically dead code. They are loaded into `ErrorCode`'s constant pool with no consumer until later tasks. The cost is invisible (one-time JVM cost, < 1 KB of class file). The benefit is enum cohesion: the file reads as a single domain vocabulary statement rather than an ad-hoc grow-as-you-go list.
+
+> 💡 中文要点：Service 方法签名要"跨阶段稳定"——`create(User, CreateListingRequest, String imagePath)` 第三参先用占位字符串顶着，等 Phase 2 的 ImageStorageService 上来再让 controller 传真实路径。Service 不关心来路是占位还是上传，只持久化字符串。**枚举一次性建满**也是同款思想：8 个 ListingErrorCode 一起进 enum，下游 task 直接 reference 现成符号，免去 4 次"改一行 enum"的零碎 commit。代价仅一次 JVM 加载 < 1 KB，换来 enum 文件的语义内聚。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T12 complete (D-42..D-48). 75 backend tests green; `Listing` entity, derived queries, 6 DTOs, 8 listing `ErrorCode`s, and `ListingService.create` shipped.*
