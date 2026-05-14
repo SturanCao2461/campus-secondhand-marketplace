@@ -293,9 +293,171 @@ CREATE INDEX idx_listings_created ON listings(created_at);
 
 ---
 
-## (Sections 4–8 to be added incrementally as the design discussion progresses.)
+## 4. API Contract
 
-- §4 API Contract — 6 个 endpoint 的 URL / 入参 / 出参 / 错误码
+All endpoints live under `/api/listings` (the categories list is the only exception). All endpoints **require authentication** — unauthenticated access returns `401 UNAUTHENTICATED` via the `AuthenticationEntryPoint` introduced in Epic 1 (D-27).
+
+Error responses keep the Epic 1 `ApiErrorResponse` shape:
+```json
+{ "code": "INVALID_INPUT", "message": "Title is required." }
+```
+
+### 4.0 New error codes (added to `ErrorCode.java`)
+
+| Code                        | HTTP | Trigger |
+|-----------------------------|------|---------|
+| `LISTING_NOT_FOUND`         | 404  | Listing id does not exist, or a non-owner tries to fetch a `REMOVED` listing |
+| `NOT_LISTING_OWNER`         | 403  | Authenticated user is not the listing's owner |
+| `INVALID_STATUS_TRANSITION` | 400  | Attempted transition is not allowed by the FSM (e.g. `REMOVED` → `AVAILABLE`) |
+| `LISTING_REMOVED`           | 400  | Editing a listing whose status is `REMOVED` |
+| `INVALID_CATEGORY`          | 400  | `categoryCode` does not exist or `active = false` |
+| `INVALID_IMAGE`             | 400  | Image fails MIME / size / decode check |
+| `MISSING_IMAGE`             | 400  | Create request without an `image` part |
+| `INVALID_PRICE`             | 400  | `SELL` listing missing `price` or `price <= 0` |
+
+### 4.1 `POST /api/listings` — Create listing
+
+**Request**: `Content-Type: multipart/form-data`
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `title` | text | yes | 1–80 chars |
+| `description` | text | yes | 1–2000 chars |
+| `categoryCode` | text | yes | e.g. `BOOKS`; must match an active category |
+| `listingType` | text | yes | `SELL` or `GIVEAWAY`; default `SELL` |
+| `price` | text | conditional | Required and `> 0` when `listingType = SELL`; ignored when `GIVEAWAY` |
+| `originalPrice` | text | no | optional; must be `> 0` if present |
+| `condition` | text | no | one of `NEW / LIKE_NEW / GOOD / FAIR / POOR` |
+| `meetAt` | text | no | up to 100 chars |
+| `negotiable` | text | no | `"true"` / `"false"`; default `false` |
+| `reasonForSelling` | text | no | up to 100 chars |
+| `image` | file | yes | see §5 for upload details |
+
+**Success response**: `201 Created`
+```json
+{
+  "id": 42,
+  "ownerId": 7,
+  "title": "Calculus textbook",
+  "description": "Used for ENGG183, good condition",
+  "price": 25.00,
+  "originalPrice": 80.00,
+  "category": { "code": "BOOKS", "nameEn": "Books & Textbooks", "nameZh": "书籍教材" },
+  "imageUrl": "/api/uploads/listings/abc-123.jpg",
+  "status": "AVAILABLE",
+  "listingType": "SELL",
+  "condition": "GOOD",
+  "meetAt": "Library foyer",
+  "negotiable": true,
+  "reasonForSelling": "Finished the paper",
+  "createdAt": "2026-05-14T10:30:00Z",
+  "updatedAt": "2026-05-14T10:30:00Z"
+}
+```
+
+**Errors**: `INVALID_INPUT`, `INVALID_CATEGORY`, `INVALID_PRICE`, `MISSING_IMAGE`, `INVALID_IMAGE`, `UNAUTHENTICATED`
+
+### 4.2 `GET /api/listings/me` — List my listings
+
+**Query params**: `includeRemoved` (optional, default `false`)
+
+**Success response**: `200 OK`
+```json
+{
+  "items": [
+    {
+      "id": 42,
+      "title": "Calculus textbook",
+      "price": 25.00,
+      "imageUrl": "/api/uploads/listings/abc-123.jpg",
+      "status": "AVAILABLE",
+      "listingType": "SELL",
+      "category": { "code": "BOOKS", "nameEn": "Books & Textbooks", "nameZh": "书籍教材" },
+      "createdAt": "2026-05-14T10:30:00Z"
+    }
+  ]
+}
+```
+
+The list response uses a slim `ListingSummary` DTO that omits long fields (`description`, `meetAt`, `reasonForSelling`, …) to keep payloads small. Full details come from §4.3.
+
+### 4.3 `GET /api/listings/{id}` — Get one listing
+
+Returns the same full `ListingResponse` shape as §4.1.
+
+**Permission rules**:
+- The owner sees their listing in any status, including `REMOVED`.
+- Any other authenticated user: in this Epic only non-`REMOVED` listings are returned; a `REMOVED` listing yields `LISTING_NOT_FOUND` to hide its existence.
+- (Epic 3 public browsing will further restrict non-owners to `AVAILABLE` / `RESERVED` / `SOLD`.)
+
+**Errors**: `LISTING_NOT_FOUND`, `UNAUTHENTICATED`
+
+### 4.4 `PUT /api/listings/{id}` — Edit listing
+
+**Request**: `Content-Type: multipart/form-data` (same shape as §4.1), but the `image` part is **optional**.
+- New `image` supplied → the old file stays on disk (KISS, see DC-6); the DB row's `image_path` is updated to point at the new file.
+- No `image` → the existing `image_path` is preserved.
+
+**Permission rules**: owner-only; refused when the listing is in `REMOVED` status.
+
+**Success response**: `200 OK` with the updated full `ListingResponse`.
+
+**Errors**: §4.1 set plus `LISTING_NOT_FOUND`, `NOT_LISTING_OWNER`, `LISTING_REMOVED`.
+
+### 4.5 `PATCH /api/listings/{id}/status` — Change status
+
+**Request body**:
+```json
+{ "newStatus": "RESERVED" }
+```
+
+**Validation**:
+- Owner-only.
+- The transition `currentStatus → newStatus` must be allowed by the FSM defined in DC-3.
+
+**Success response**: `200 OK` with the updated full `ListingResponse`.
+
+**Errors**: `LISTING_NOT_FOUND`, `NOT_LISTING_OWNER`, `INVALID_STATUS_TRANSITION`.
+
+### 4.6 `DELETE /api/listings/{id}` — Remove listing
+
+**Effective semantics**: transition the listing's `status` to `REMOVED` (soft-delete terminal). The DB row is **not** actually deleted.
+
+Equivalent to `PATCH /status` with `{"newStatus":"REMOVED"}`, but the `DELETE` verb is the more natural REST shape for a frontend "delete" button. Keeping both endpoints (PATCH for general transitions, DELETE for removal) is intentional — it lets the frontend stay declarative (`api.delete(...)`) without constructing a PATCH body for the common case.
+
+**Success response**: `204 No Content`.
+
+**Errors**: `LISTING_NOT_FOUND`, `NOT_LISTING_OWNER`.
+
+### 4.7 `GET /api/categories` — List categories
+
+Returns all categories where `active = true` (used by the Create / Edit form's dropdown).
+
+**Success response**: `200 OK`
+```json
+{
+  "items": [
+    { "code": "BOOKS", "nameEn": "Books & Textbooks", "nameZh": "书籍教材" },
+    { "code": "ELECTRONICS", "nameEn": "Electronics", "nameZh": "电子产品" }
+  ]
+}
+```
+
+This endpoint requires authentication; the list is identical for every signed-in user.
+
+### 4.8 `GET /api/uploads/listings/{filename}` — Serve listing image
+
+Returns the raw image bytes.
+
+**Notes**:
+- In this Epic the upload endpoint requires authentication (`requestMatchers("/api/uploads/**").authenticated()`).
+- Epic 3 will relax this to `permitAll` when public browsing arrives; listing detail and edit are still owner-only here.
+- `Cache-Control: max-age=86400` — images are content-addressed by UUID filename and effectively immutable, so a 24-hour client cache is safe.
+
+---
+
+## (Sections 5–8 to be added incrementally as the design discussion progresses.)
+
 - §5 Image Upload Detail — multipart 处理、文件名生成、磁盘布局、安全（MIME/大小校验）
 - §6 Frontend Pages — My Listings / Create / Edit 页面 + 路由 + 表单 / 状态切换 UI
 - §7 Security & Permissions — owner-only 校验位置、错误码、防 IDOR
