@@ -1,6 +1,7 @@
 package nz.ac.waikato.campusmarketplace.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import nz.ac.waikato.campusmarketplace.AbstractIntegrationTest;
 import nz.ac.waikato.campusmarketplace.repository.ListingRepository;
 import nz.ac.waikato.campusmarketplace.repository.UserRepository;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -15,8 +17,13 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
-import java.math.BigDecimal;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,35 +34,31 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
     @Autowired UserRepository users;
     @Autowired ListingRepository listings;
     @Autowired StringRedisTemplate redis;
+    @Autowired ObjectMapper json;
 
     @BeforeEach
     void clean() {
-        listings.deleteAll();
-        users.deleteAll();
+        listings.deleteAllInBatch();
+        users.deleteAllInBatch();
         redis.getConnectionFactory().getConnection().serverCommands().flushDb();
     }
 
     @Test
-    void createAndListMineRoundTrip() {
+    void createAndListMineRoundTrip() throws Exception {
         register("seller@students.waikato.ac.nz", "Pass1234", "Seller");
         String cookie = loginAndGetCookie("seller@students.waikato.ac.nz", "Pass1234");
 
-        ResponseEntity<JsonNode> created = postJson("/api/listings", cookie, Map.of(
-                "title", "Calculus 7e",
-                "description", "Used textbook in great condition",
-                "categoryCode", "BOOKS",
-                "listingType", "SELL",
-                "price", new BigDecimal("45.00"),
-                "originalPrice", new BigDecimal("129.00"),
-                "condition", "GOOD",
-                "meetAt", "Library cafe",
-                "negotiable", true,
-                "reasonForSelling", "Finished the course"
-        ));
+        ResponseEntity<JsonNode> created = createListing(cookie,
+                """
+                {"title":"Calculus 7e","description":"Used textbook in great condition",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":45.00,
+                 "originalPrice":129.00,"condition":"GOOD","meetAt":"Library cafe",
+                 "negotiable":true,"reasonForSelling":"Finished the course"}
+                """);
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         long createdId = created.getBody().get("id").asLong();
-        assertThat(created.getBody().get("imageUrl").asText())
-                .isEqualTo("/api/uploads/listings/placeholder.jpg");
+        assertThat(created.getBody().get("imageUrl").asText()).startsWith("/api/uploads/listings/");
+        assertThat(created.getBody().get("imageUrl").asText()).endsWith(".jpg");
         assertThat(created.getBody().get("status").asText()).isEqualTo("AVAILABLE");
 
         ResponseEntity<JsonNode> mine = getJson("/api/listings/me", cookie);
@@ -68,52 +71,75 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void nonOwnerGetOneReturnsNotFound() {
+    void nonOwnerGetOneReturnsNotFoundForRemovedListing() throws Exception {
         register("owner@students.waikato.ac.nz", "Pass1234", "Owner");
         String ownerCookie = loginAndGetCookie("owner@students.waikato.ac.nz", "Pass1234");
-        ResponseEntity<JsonNode> created = postJson("/api/listings", ownerCookie, Map.of(
-                "title", "Owner Item", "description", "Test",
-                "categoryCode", "BOOKS", "listingType", "SELL",
-                "price", new BigDecimal("10.00")));
+        ResponseEntity<JsonNode> created = createListing(ownerCookie,
+                """
+                {"title":"Owner Item","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
         long listingId = created.getBody().get("id").asLong();
+
+        // Mark as REMOVED
+        patchJson("/api/listings/" + listingId + "/status", ownerCookie,
+                Map.of("newStatus", "REMOVED"));
 
         register("stranger@students.waikato.ac.nz", "Pass5678", "Stranger");
         String strangerCookie = loginAndGetCookie("stranger@students.waikato.ac.nz", "Pass5678");
         ResponseEntity<JsonNode> r = getJson("/api/listings/" + listingId, strangerCookie);
-
-        // Stranger sees the same 404 LISTING_NOT_FOUND for AVAILABLE-but-not-mine
-        // is permitted (Epic 3 will broaden), but spec §4.3 only requires non-owners
-        // to be hidden from REMOVED. Mark stranger's listing as REMOVED to exercise
-        // the anti-enumeration path.
-        ResponseEntity<JsonNode> markRemoved = patchJson(
-                "/api/listings/" + listingId + "/status", ownerCookie,
-                Map.of("newStatus", "REMOVED"));
-        assertThat(markRemoved.getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        ResponseEntity<JsonNode> r2 = getJson("/api/listings/" + listingId, strangerCookie);
-        assertThat(r2.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(r2.getBody().get("code").asText()).isEqualTo("LISTING_NOT_FOUND");
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(r.getBody().get("code").asText()).isEqualTo("LISTING_NOT_FOUND");
     }
 
     @Test
-    void deleteIsIdempotent() {
+    void deleteIsIdempotent() throws Exception {
         register("deleter@students.waikato.ac.nz", "Pass1234", "Deleter");
         String cookie = loginAndGetCookie("deleter@students.waikato.ac.nz", "Pass1234");
-        ResponseEntity<JsonNode> created = postJson("/api/listings", cookie, Map.of(
-                "title", "To Delete", "description", "Test",
-                "categoryCode", "BOOKS", "listingType", "SELL",
-                "price", new BigDecimal("10.00")));
+        ResponseEntity<JsonNode> created = createListing(cookie,
+                """
+                {"title":"To Delete","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
         long listingId = created.getBody().get("id").asLong();
 
-        ResponseEntity<Void> first = deleteJson("/api/listings/" + listingId, cookie);
+        ResponseEntity<Void> first = deleteReq("/api/listings/" + listingId, cookie);
         assertThat(first.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
 
-        // spec §4.6: DELETE on already-REMOVED is a silent success (no INVALID_STATUS_TRANSITION).
-        ResponseEntity<Void> second = deleteJson("/api/listings/" + listingId, cookie);
+        ResponseEntity<Void> second = deleteReq("/api/listings/" + listingId, cookie);
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
     }
 
     // ---------- helpers ----------
+
+    private byte[] tinyJpeg() throws IOException {
+        BufferedImage img = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(img, "jpg", out);
+        return out.toByteArray();
+    }
+
+    private ResponseEntity<JsonNode> createListing(String cookie, String listingJson) throws IOException {
+        HttpHeaders h = new HttpHeaders();
+        h.setContentType(MediaType.MULTIPART_FORM_DATA);
+        h.add(HttpHeaders.COOKIE, cookie);
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        // listing part as JSON
+        HttpHeaders listingHeaders = new HttpHeaders();
+        listingHeaders.setContentType(MediaType.APPLICATION_JSON);
+        body.add("listing", new HttpEntity<>(listingJson, listingHeaders));
+        // image part
+        ByteArrayResource imageResource = new ByteArrayResource(tinyJpeg()) {
+            @Override public String getFilename() { return "test.jpg"; }
+        };
+        HttpHeaders imageHeaders = new HttpHeaders();
+        imageHeaders.setContentType(MediaType.IMAGE_JPEG);
+        body.add("image", new HttpEntity<>(imageResource, imageHeaders));
+
+        return rest.exchange("/api/listings", HttpMethod.POST,
+                new HttpEntity<>(body, h), JsonNode.class);
+    }
 
     private void register(String email, String password, String nickname) {
         HttpHeaders h = new HttpHeaders();
@@ -136,13 +162,6 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
         return setCookie.split(";", 2)[0];
     }
 
-    private ResponseEntity<JsonNode> postJson(String url, String cookie, Map<String, ?> body) {
-        HttpHeaders h = new HttpHeaders();
-        h.setContentType(MediaType.APPLICATION_JSON);
-        h.add(HttpHeaders.COOKIE, cookie);
-        return rest.exchange(url, HttpMethod.POST, new HttpEntity<>(body, h), JsonNode.class);
-    }
-
     private ResponseEntity<JsonNode> patchJson(String url, String cookie, Map<String, ?> body) {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
@@ -156,7 +175,7 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
         return rest.exchange(url, HttpMethod.GET, new HttpEntity<>(h), JsonNode.class);
     }
 
-    private ResponseEntity<Void> deleteJson(String url, String cookie) {
+    private ResponseEntity<Void> deleteReq(String url, String cookie) {
         HttpHeaders h = new HttpHeaders();
         h.add(HttpHeaders.COOKIE, cookie);
         return rest.exchange(url, HttpMethod.DELETE, new HttpEntity<>(h), Void.class);

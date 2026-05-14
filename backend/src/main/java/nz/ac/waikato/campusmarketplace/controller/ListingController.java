@@ -10,11 +10,13 @@ import nz.ac.waikato.campusmarketplace.entity.ListingStatus;
 import nz.ac.waikato.campusmarketplace.entity.User;
 import nz.ac.waikato.campusmarketplace.filter.AuthPrincipal;
 import nz.ac.waikato.campusmarketplace.repository.UserRepository;
+import nz.ac.waikato.campusmarketplace.service.ImageStorageService;
 import nz.ac.waikato.campusmarketplace.service.ListingService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,29 +28,35 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/listings")
 public class ListingController {
 
     private static final int PAGE_SIZE = 12;
-    // Phase 1 has no real image upload; T19 will replace this with a path
-    // returned by ImageStorageService.store(file).
-    private static final String PLACEHOLDER_IMAGE_PATH = "listings/placeholder.jpg";
 
     private final ListingService listingService;
+    private final ImageStorageService imageStorage;
     private final UserRepository users;
 
-    public ListingController(ListingService listingService, UserRepository users) {
+    public ListingController(ListingService listingService,
+                             ImageStorageService imageStorage,
+                             UserRepository users) {
         this.listingService = listingService;
+        this.imageStorage = imageStorage;
         this.users = users;
     }
 
-    @PostMapping
-    public ResponseEntity<ListingResponse> create(@AuthenticationPrincipal AuthPrincipal principal,
-                                                  @RequestBody @Valid CreateListingRequest req) {
-        ListingResponse body = listingService.create(currentUser(principal), req, PLACEHOLDER_IMAGE_PATH);
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ListingResponse> create(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestPart("listing") @Valid CreateListingRequest req,
+            @RequestPart("image") MultipartFile image) {
+        String imagePath = imageStorage.store(image);
+        ListingResponse body = listingService.create(currentUser(principal), req, imagePath);
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
@@ -69,13 +77,15 @@ public class ListingController {
         return ResponseEntity.ok(listingService.getOne(currentUser(principal), id));
     }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<ListingResponse> update(@AuthenticationPrincipal AuthPrincipal principal,
-                                                  @PathVariable Long id,
-                                                  @RequestBody @Valid UpdateListingRequest req) {
-        // Phase 1: no image upload; pass null so the existing image_path is kept.
-        // T19 will pass imageStorage.store(file) when a new image part is present.
-        ListingResponse body = listingService.update(currentUser(principal), id, req, null);
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ListingResponse> update(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable Long id,
+            @RequestPart("listing") @Valid UpdateListingRequest req,
+            @RequestPart(value = "image", required = false) MultipartFile image) {
+        String newImagePath = (image != null && !image.isEmpty())
+                ? imageStorage.store(image) : null;
+        ListingResponse body = listingService.update(currentUser(principal), id, req, newImagePath);
         return ResponseEntity.ok(body);
     }
 
@@ -94,8 +104,6 @@ public class ListingController {
     }
 
     private User currentUser(AuthPrincipal principal) {
-        // getReferenceById returns a lazy proxy with the id set; no SELECT until a field is read.
-        // Service-layer code only uses the id (FK association), so this avoids an extra roundtrip.
         return users.getReferenceById(principal.userId());
     }
 
