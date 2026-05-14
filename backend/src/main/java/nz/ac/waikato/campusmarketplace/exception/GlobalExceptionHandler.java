@@ -16,8 +16,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiErrorResponse> handleApi(ApiException ex, HttpServletRequest req) {
         log.debug("ApiException at {}: {} {}", req.getRequestURI(), ex.getCode(), ex.getMessage());
-        return ResponseEntity.status(ex.getCode().getStatus())
-                .body(ApiErrorResponse.of(ex.getCode(), ex.getMessage()));
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(ex.getCode().getStatus());
+        if (ex.getRetryAfterSeconds() != null) {
+            builder.header("Retry-After", ex.getRetryAfterSeconds().toString());
+        }
+        return builder.body(ApiErrorResponse.of(ex.getCode(), ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
