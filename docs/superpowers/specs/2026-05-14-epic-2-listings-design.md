@@ -992,6 +992,201 @@ This brings Epic 1's existing login / register limits up to spec **and** wires t
 
 ---
 
-## (Section 8 to be added incrementally as the design discussion progresses.)
+## 8. Testing Strategy
 
-- §8 Testing Strategy — 单元 / 组件 / 集成 三层测试边界
+Epic 2 inherits the testing pyramid that Epic 1 validated and adds **frontend automated testing** as a first-class layer. Epic 1 produced 36 backend tests plus a manual E2E checklist; Epic 2 produces backend tests of similar density **and** adds Vitest / React Testing Library / MSW / Playwright on the frontend.
+
+### 8.1 Layers and tools
+
+| Layer | Backend | Frontend |
+|---|---|---|
+| **Unit** (mock everything) | JUnit 5 + Mockito | Vitest + React Testing Library |
+| **Component** (single real dependency in a container) | Testcontainers (Redis only) | Vitest + RTL + MSW |
+| **Integration** (whole stack) | Spring Boot Test + Testcontainers (MySQL + Redis) | Playwright (real browser) |
+| **Manual E2E** | `docs/manual-e2e-epic2.md` | Same |
+
+The frontend stack (Vitest, RTL, MSW, Playwright) is installed once in this Epic; Epic 3 onward inherits it.
+
+### 8.2 Backend tests
+
+#### 8.2.1 Unit tests (`src/test/java/.../service/`)
+
+| Test class | Coverage |
+|---|---|
+| `ListingServiceCreateTest` | Title length, SELL requires price, GIVEAWAY rejects price, unknown / inactive category, owner auto-set, status defaults to `AVAILABLE`, `imageStorage.store()` invoked once |
+| `ListingServiceUpdateTest` | Owner check throws `LISTING_NOT_FOUND`, `REMOVED` throws `LISTING_REMOVED`, field updates, optional image (path preserved when absent), `imageStorage.store()` invoked only on replacement |
+| `ListingServiceStatusTest` | All 7 legal transitions pass; illegal transitions throw `INVALID_STATUS_TRANSITION`; owner check |
+| `ListingServiceQueryTest` | `listMine` paging / sorting / status filter / `includeRemoved`; `getOne` hides `REMOVED` from non-owners |
+| `ListingServiceRemoveTest` | Soft delete (`status = REMOVED`), owner check, already-`REMOVED` remains idempotent |
+| `LocalImageStorageServiceTest` | Magic-number validation (JPEG / PNG / WebP pass; spoofed MIME rejected), 5 MB cap, UUID filename generation, path-traversal defenses |
+| `RateLimitServiceIncrementByTest` | `incrementBy` accumulates byte counts; `exceeded()` returns remaining TTL; isolated keys |
+
+Mocking strategy follows Epic 1:
+- All repositories are mocked (`UserRepository`, `ListingRepository`, `CategoryRepository`).
+- `ImageStorageService` is mocked at the `ListingService` boundary; the real implementation has its own tests.
+- `RateLimitService` is mocked at the service-test layer; the real implementation is exercised by component tests.
+
+Projected: ~35 unit-test methods across 7 classes.
+
+#### 8.2.2 Component tests (Testcontainers)
+
+| Test class | Container | Coverage |
+|---|---|---|
+| `LocalImageStorageServiceIntegrationTest` | none (uses a temp directory) | Real disk write, readback, concurrent UUID writes |
+| `RateLimitServiceTest` (existing) | Redis | Extended with `incrementBy` and TTL-aware `exceeded` behavior |
+
+#### 8.2.3 Integration tests
+
+New `ListingControllerIntegrationTest extends AbstractIntegrationTest`:
+
+| Scenario | Method name |
+|---|---|
+| Create — happy path | `createReturnsListingWithStatusAvailable` |
+| Create — missing image | `createWithoutImageReturns400MissingImage` |
+| Create — spoofed MIME | `createWithExeRenamedAsJpgReturns400InvalidImage` |
+| Create — unknown category | `createWithUnknownCategoryReturns400` |
+| Create — rate-limit hit | `createOver20PerHourReturns429WithRetryAfter` |
+| List mine — paging | `listMineRespectsPageAndSize` |
+| List mine — status filter | `listMineFiltersByStatus` |
+| Get one — owner sees `REMOVED` | `getOneOwnerCanSeeRemoved` |
+| Get one — non-owner gets 404 | `getOneNonOwnerReceives404SameAsMissing` |
+| Update — non-owner gets 404 | `updateByNonOwnerReceives404` |
+| Update — `REMOVED` rejected | `updateOnRemovedReturns400ListingRemoved` |
+| Status — all 7 legal transitions | `statusAllLegalTransitionsSucceed` |
+| Status — illegal transition | `statusFromRemovedReturns400` |
+| Delete — soft delete + 204 | `deleteSetsRemovedAndReturns204` |
+| Image — owner sees | `imageServeReturnsBytesForOwner` |
+| Image — non-owner gets 404 | `imageServeForNonOwnerReturns404` |
+| Image — path traversal blocked | `imageServeRejectsPathTraversal` |
+| Categories — list active only | `listCategoriesReturnsActiveOnly` |
+
+Projected: ~18 integration tests.
+
+#### 8.2.4 Epic 1 carry-over fix tests
+
+`AuthServiceLoginLogoutTest` adds:
+- `loginRateLimitExceededReturns429StatusCode` — verifies the §7.10 status-code fix.
+- `loginRateLimitExceededIncludesRetryAfter` — verifies the response header.
+
+### 8.3 Frontend tests (introduced in this Epic)
+
+#### 8.3.1 Setup
+
+```
+frontend/
+├── vitest.config.ts           # jsdom env, setup file, coverage config
+├── src/test/
+│   ├── setup.ts               # @testing-library/jest-dom + vitest matchers
+│   └── mocks/handlers.ts      # MSW handlers — mocked backend API
+├── playwright.config.ts       # E2E browser automation config
+└── e2e/
+    └── listings.spec.ts       # E2E flows
+```
+
+#### 8.3.2 Unit tests (Vitest, fully mocked)
+
+Pure functions and utilities:
+- `validateImageClientSide.test.ts` — 5 MB boundary; the three allowed MIME types pass; everything else rejects.
+- `i18n/listings.test.ts` — copy-table lookup correctness.
+
+Hooks:
+- `useOptimisticStatus.test.ts` — happy path does not roll back; failure rolls back to the previous status; concurrent requests behave correctly.
+
+#### 8.3.3 Component tests (Vitest + RTL + MSW)
+
+| Test file | Coverage |
+|---|---|
+| `ListingCard.test.tsx` | All four badge colors / labels; per-status quick-action button sets; Remove opens `ConfirmDialog`; optimistic rollback on failure |
+| `ListingForm.test.tsx` | Create vs Edit differences; `GIVEAWAY` greys out price; client-side validation indicators; dirty detection on submit |
+| `ImagePicker.test.tsx` | Rejects > 5 MB; rejects non-image MIME; thumbnail render; replace flow |
+| `ConfirmDialog.test.tsx` | Focus defaults to Cancel; Esc closes; focus trap prevents Tab leaving the modal |
+| `Pagination.test.tsx` | Edge states (prev disabled on first page, next disabled on last); click callbacks fire |
+| `MyListingsPage.test.tsx` | loading → empty → items state machine; filter changes refetch; correct paging params |
+| `CreateListingPage.test.tsx` | Submit happy path navigates to `/listings/mine`; server-side error codes map to field-level error states; unsaved-changes guard |
+| `EditListingPage.test.tsx` | Prefilled from `getOne`; `REMOVED` renders read-only banner; non-owner is redirected |
+| `ListingDetailPage.test.tsx` | Owner sees all fields; `REMOVED` banner appears; status toolbar and Delete button visible |
+
+Projected: ~30 component-test methods.
+
+#### 8.3.4 E2E tests (Playwright)
+
+Full stack: backend (Testcontainers) + frontend dev server + headless browser.
+
+| Spec | Flow |
+|---|---|
+| `e2e/create-flow.spec.ts` | Sign in → `/listings/new` → fill form → upload image → submit → new entry visible at `/listings/mine` |
+| `e2e/edit-flow.spec.ts` | Edit existing listing → change title and image → save → detail page reflects changes |
+| `e2e/status-flow.spec.ts` | AVAILABLE → RESERVED → SOLD → back to AVAILABLE → REMOVED |
+| `e2e/permission.spec.ts` | User A creates listing → user B signs in → user B visiting `/listings/{A_id}` receives 404 |
+| `e2e/image-leak.spec.ts` | User A creates listing → A copies image URL → user B signs in and visits the URL → receives 404 (verifies §7.5) |
+
+#### 8.3.5 Manual E2E checklist (`docs/manual-e2e-epic2.md`)
+
+Follows the Epic 1 style and serves the same role for teacher demos:
+- Setup (startup order).
+- Create flow with all fields and image.
+- My Listings — list, filter, paginate.
+- Detail page — every field renders.
+- Edit flow including image replacement.
+- All 7 status transitions.
+- Delete with confirmation modal.
+- Rate limit: 21 create requests trigger 429.
+- Cross-user access → 404.
+- Image-URL leak between users → 404.
+
+### 8.4 Coverage targets
+
+| Layer | Target |
+|---|---|
+| Backend `service` and `controller` packages — line | ≥ 85% |
+| Backend overall (including `entity` / `dto` getters) — line | ≥ 75% |
+| Frontend hooks and utility functions — line | ≥ 85% |
+| Frontend components — branch | ≥ 70% |
+
+**Coverage is reported but not enforced as a CI gate.** JaCoCo (backend) and Vitest's c8 (frontend) generate HTML reports per build; the numbers are documented in the thesis as a quality indicator. A failed build is never caused by a coverage drop alone — the team's judgment, not a percentage, decides whether a test is missing.
+
+The rationale matches the project-wide stance that Coverage *measures presence of test execution*, not test quality. Reaching 100% is straightforward by writing trivial getter tests, but those tests do not protect against regressions. The targets above are calibrated against Spring Framework / React open-source ranges and are realistic given the testing structure designed in §8.2 and §8.3.
+
+### 8.5 Performance budgets
+
+| Suite | Target local runtime |
+|---|---|
+| Backend unit tests (mocked) | < 5 s |
+| Backend component tests (Testcontainers Redis only) | < 30 s |
+| Backend integration tests (Testcontainers MySQL + Redis) | < 60 s |
+| Frontend unit + component tests (jsdom) | < 15 s |
+| Playwright E2E (headless) | < 90 s |
+| **CI overall** | **< 4 minutes** |
+
+If a layer exceeds its budget, optimize the tests first (avoid full Spring Boot context per test, parallelize, share containers) rather than removing tests.
+
+### 8.6 Pyramid reuse and evolution
+
+Reused from Epic 1:
+- `AbstractIntegrationTest` (extended unchanged).
+- `application-test.properties` (one new line: `app.upload.root=${java.io.tmpdir}/test-uploads`).
+- Testcontainers BOM `1.21.3` and the surefire `api.version=1.40` override from Problem #1.
+
+Added in Epic 2 for reuse from Epic 3 onward:
+- Helpers on `AbstractIntegrationTest` to generate valid JPEG / PNG / WebP byte streams plus spoofed binaries for negative tests.
+- The entire frontend testing stack (Vitest, RTL, MSW, Playwright).
+
+### 8.7 Thesis material
+
+The testing design itself is thesis material:
+- Why 5 layers (unit / component / integration / E2E / manual) rather than 3, with industrial-practice justification.
+- The introduction of frontend automated testing as a trade-off Epic 1 deferred and Epic 2 fulfils.
+- A critical view of "Coverage as KPI" rather than as goal.
+- Total projected test count (~83 backend + ~30 frontend + ~5 E2E ≈ 118) as evidence of completeness.
+
+---
+
+## Appendix A — Document inventory
+
+This spec produced the following artifacts in the project tree:
+- `docs/superpowers/specs/2026-05-14-epic-2-listings-design.md` (this file)
+- `docs/superpowers/plans/2026-05-14-epic-2-listings.md` (to be created by the writing-plans workflow next)
+- `docs/manual-e2e-epic2.md` (to be authored during implementation, mirroring Epic 1)
+- Engineering-journal entries `D-38..` are appended task-by-task during implementation, matching the Epic 1 cadence.
+
+*End of spec.*
