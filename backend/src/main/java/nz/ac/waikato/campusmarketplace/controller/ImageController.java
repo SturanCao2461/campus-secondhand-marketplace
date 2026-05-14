@@ -1,6 +1,7 @@
 package nz.ac.waikato.campusmarketplace.controller;
 
 import nz.ac.waikato.campusmarketplace.entity.Listing;
+import nz.ac.waikato.campusmarketplace.entity.ListingStatus;
 import nz.ac.waikato.campusmarketplace.exception.ApiException;
 import nz.ac.waikato.campusmarketplace.exception.ErrorCode;
 import nz.ac.waikato.campusmarketplace.filter.AuthPrincipal;
@@ -40,8 +41,11 @@ public class ImageController {
         Listing listing = listings.findByImagePath(relativePath)
                 .orElseThrow(() -> new ApiException(ErrorCode.LISTING_NOT_FOUND, "Image not found."));
 
-        if (!listing.getOwner().getId().equals(principal.userId())) {
-            throw new ApiException(ErrorCode.LISTING_NOT_FOUND, "Image not found.");
+        // Public access for non-REMOVED listings; REMOVED requires owner auth
+        if (listing.getStatus() == ListingStatus.REMOVED) {
+            if (principal == null || !listing.getOwner().getId().equals(principal.userId())) {
+                throw new ApiException(ErrorCode.LISTING_NOT_FOUND, "Image not found.");
+            }
         }
 
         Resource resource = imageStorage.load(relativePath);

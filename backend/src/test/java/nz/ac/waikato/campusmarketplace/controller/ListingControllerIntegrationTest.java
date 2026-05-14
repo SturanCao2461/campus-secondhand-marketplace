@@ -348,12 +348,13 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void imageNotServedToNonOwner() throws Exception {
+    void imageServedToAnyoneForNonRemovedListing() throws Exception {
+        // Epic 3: non-REMOVED listing images are public
         register("img-own2@students.waikato.ac.nz", "Pass1234", "ImgOwn2");
         String ownerCookie = loginAndGetCookie("img-own2@students.waikato.ac.nz", "Pass1234");
         ResponseEntity<JsonNode> created = createListing(ownerCookie,
                 """
-                {"title":"Img Private","description":"Test",
+                {"title":"Img Public","description":"Test",
                  "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
                 """);
         String imageUrl = created.getBody().get("imageUrl").asText();
@@ -362,9 +363,9 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
         String spyCookie = loginAndGetCookie("img-spy@students.waikato.ac.nz", "Pass5678");
         HttpHeaders h = new HttpHeaders();
         h.add(HttpHeaders.COOKIE, spyCookie);
-        ResponseEntity<JsonNode> r = rest.exchange(imageUrl, HttpMethod.GET,
-                new HttpEntity<>(h), JsonNode.class);
-        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        ResponseEntity<byte[]> r = rest.exchange(imageUrl, HttpMethod.GET,
+                new HttpEntity<>(h), byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     @Test

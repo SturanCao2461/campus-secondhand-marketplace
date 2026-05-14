@@ -1,5 +1,6 @@
 package nz.ac.waikato.campusmarketplace.service;
 
+import nz.ac.waikato.campusmarketplace.dto.BrowseQuery;
 import nz.ac.waikato.campusmarketplace.dto.CreateListingRequest;
 import nz.ac.waikato.campusmarketplace.dto.ListingResponse;
 import nz.ac.waikato.campusmarketplace.dto.PagedListings;
@@ -13,13 +14,15 @@ import nz.ac.waikato.campusmarketplace.exception.ApiException;
 import nz.ac.waikato.campusmarketplace.exception.ErrorCode;
 import nz.ac.waikato.campusmarketplace.repository.CategoryRepository;
 import nz.ac.waikato.campusmarketplace.repository.ListingRepository;
+import nz.ac.waikato.campusmarketplace.repository.ListingSpecifications;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -128,6 +131,46 @@ public class ListingService {
         listing.setStatus(newStatus);
         Listing saved = listings.save(listing);
         return ListingResponse.from(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedListings browse(BrowseQuery query, Pageable pageable) {
+        List<ListingStatus> publicStatuses = List.of(
+                ListingStatus.AVAILABLE, ListingStatus.RESERVED, ListingStatus.SOLD);
+
+        Specification<Listing> spec = ListingSpecifications.hasStatusIn(publicStatuses);
+
+        if (query.keyword() != null && !query.keyword().isBlank()) {
+            spec = spec.and(ListingSpecifications.titleContains(query.keyword().trim()));
+        }
+        if (query.categoryCode() != null && !query.categoryCode().isBlank()) {
+            Category cat = categories.findByCode(query.categoryCode())
+                    .filter(Category::getActive)
+                    .orElse(null);
+            if (cat != null) {
+                spec = spec.and(ListingSpecifications.hasCategory(cat));
+            }
+        }
+        if (query.minPrice() != null || query.maxPrice() != null) {
+            spec = spec.and(ListingSpecifications.priceBetween(query.minPrice(), query.maxPrice()));
+        }
+        if (query.listingType() != null) {
+            spec = spec.and(ListingSpecifications.hasListingType(query.listingType()));
+        }
+
+        Page<Listing> page = listings.findAll(spec, pageable);
+        return PagedListings.from(page);
+    }
+
+    @Transactional(readOnly = true)
+    public ListingResponse getDetail(Long id) {
+        Listing listing = listings.findById(id)
+                .orElseThrow(() -> new ApiException(ErrorCode.LISTING_NOT_FOUND,
+                        "Listing not found."));
+        if (listing.getStatus() == ListingStatus.REMOVED) {
+            throw new ApiException(ErrorCode.LISTING_NOT_FOUND, "Listing not found.");
+        }
+        return ListingResponse.from(listing);
     }
 
     @Transactional(readOnly = true)

@@ -14,8 +14,12 @@ Listing CRUD and status management
 - Tests: 128 backend (unit + integration) + 3 Playwright E2E specs
 - Journal: D-40..D-56 (17 decision entries)
 
-## Milestone 4
+## Milestone 4 ✅
 Browse, search, filter, detail page
+- Completed: 2026-05-15
+- Backend: public browse endpoint with JPA Specifications (keyword/category/price/type filters), public detail, image access relaxed for non-REMOVED
+- Frontend: BrowsePage (grid + search + filters + pagination + URL state), PublicDetailPage, public routes
+- SecurityConfig: GET /api/listings, /api/listings/*/detail, /api/uploads/listings/**, /api/categories all permitAll
 
 ## Milestone 5
 Messaging module

@@ -13,6 +13,8 @@ import { CreateListingPage } from './pages/CreateListingPage'
 import { MyListingsPage } from './pages/MyListingsPage'
 import { ListingDetailPage } from './pages/ListingDetailPage'
 import { EditListingPage } from './pages/EditListingPage'
+import { BrowsePage } from './pages/BrowsePage'
+import { PublicDetailPage } from './pages/PublicDetailPage'
 
 export default function App() {
   return (
@@ -22,6 +24,8 @@ export default function App() {
           <Navbar />
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/browse" element={<BrowsePage />} />
+            <Route path="/listings/:id/detail" element={<PublicDetailPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
