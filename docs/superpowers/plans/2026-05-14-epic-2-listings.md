@@ -552,9 +552,109 @@ Start the backend (`cd backend && ./mvnw spring-boot:run -Dspring-boot.run.profi
 ### Task T5 — DB migration: `categories` table + 8 seed rows
 ### Task T6 — `Category` JPA entity + `CategoryRepository`
 ### Task T7 — `GET /api/categories` endpoint + unit + integration test
-### Task T8 — DB migration: `listings` table + 4 indexes
-### Task T9 — `Listing` JPA entity + 3 enums (`ListingStatus`, `ListingType`, `Condition`)
-### Task T10 — `ListingRepository` + custom queries (`findByOwner`, `findByImagePath`, `Pageable` queries)
+### Task T8 — `Listing` entity + 3 enums + 4 indexes + minimal repository
+
+> **Boundary note (2026-05-15):** Original plan split this into T8 (DDL migration) + T9 (entity + enums). Because Phase 1 switched to JPA `ddl-auto=update` (commit `14fdb6d`, see D-40 in journal), the schema is **a side effect** of the entity declaration — the `@Index` annotations on `@Table` are what produce the 4 named indexes. T8 and T9 cannot be split cleanly under that strategy, so T8 absorbs the entity work. T9 is repurposed for the repository derived queries (formerly T10). T10 is marked as absorbed.
+
+**Files:**
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/ListingStatus.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/ListingType.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/Condition.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/Listing.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/repository/ListingRepository.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/entity/ListingSchemaIntegrationTest.java`
+
+- [ ] **Step 1: Write the failing schema integration test (4 tests)**
+
+The test uses the existing `AbstractIntegrationTest` (singleton-container pattern from D-41). It verifies:
+1. `listings` table exists in `information_schema.tables`
+2. The 4 named indexes exist via `information_schema.statistics`
+3. A full Listing round-trips (save → findById) preserving all fields, defaults, and lazy associations
+4. Enums persist as VARCHAR strings, not ordinals (raw SQL spot-check)
+
+Wraps each persistence test in `clean()` to wipe `listings` and `users`; categories are seeded by `CategorySeeder` and stay.
+
+- [ ] **Step 2: Run test to verify it fails to compile**
+
+```bash
+./mvnw -Dtest=ListingSchemaIntegrationTest test
+```
+Expected: COMPILE FAIL — `Listing`, `ListingRepository`, `ListingStatus`, `ListingType`, `Condition` symbols missing.
+
+- [ ] **Step 3: Create the 3 enum classes**
+
+```java
+package nz.ac.waikato.campusmarketplace.entity;
+public enum ListingStatus { AVAILABLE, RESERVED, SOLD, REMOVED }
+```
+```java
+package nz.ac.waikato.campusmarketplace.entity;
+public enum ListingType { SELL, GIVEAWAY }
+```
+```java
+package nz.ac.waikato.campusmarketplace.entity;
+public enum Condition { NEW, LIKE_NEW, GOOD, FAIR, POOR }
+```
+
+- [ ] **Step 4: Create `Listing.java` entity**
+
+Full entity with all 16 columns, `@ManyToOne(LAZY)` to `User` and `Category`, 4 `@Index` annotations on `@Table`, `@Enumerated(EnumType.STRING)` on the 3 enum fields, backtick-quoted `condition` column, `@CreationTimestamp` / `@UpdateTimestamp` on the timestamp fields, `deleted_at` for parity with `users`.
+
+- [ ] **Step 5: Create `ListingRepository.java` (minimal)**
+
+```java
+package nz.ac.waikato.campusmarketplace.repository;
+
+import nz.ac.waikato.campusmarketplace.entity.Listing;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface ListingRepository extends JpaRepository<Listing, Long> {
+}
+```
+Derived queries are deliberately deferred to T9.
+
+- [ ] **Step 6: Run schema test alone**
+
+```bash
+./mvnw -Dtest=ListingSchemaIntegrationTest test
+```
+Expected: PASS — 4/4 green.
+
+- [ ] **Step 7: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 49 + 4 = 53 tests green.
+
+- [ ] **Step 8: Append D-42 to engineering journal**
+
+Three lessons worth documenting:
+- Why 4 indexes were created up-front (read-pattern coverage including Epic 3's `WHERE status = 'AVAILABLE'`).
+- The `condition` column gotcha — MySQL reserved word, must be backtick-quoted in `@Column(name = "\`condition\`")`.
+- How to verify schema with `information_schema.statistics` instead of round-tripping a row (cheaper, more direct).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/ListingStatus.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/ListingType.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/Condition.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/entity/Listing.java \
+        backend/src/main/java/nz/ac/waikato/campusmarketplace/repository/ListingRepository.java \
+        backend/src/test/java/nz/ac/waikato/campusmarketplace/entity/ListingSchemaIntegrationTest.java \
+        docs/engineering-journal.md \
+        docs/superpowers/plans/2026-05-14-epic-2-listings.md
+git commit -m "feat(backend): Listing entity + 3 enums + 4 indexes + minimal repository"
+```
+
+---
+
+### Task T9 — `ListingRepository` derived queries (`findByOwner`, `findByImagePath`, `Pageable` queries)
+
+> **Boundary note (2026-05-15):** Repurposed from "Listing entity + enums" (absorbed by T8) to "repository derived queries" (formerly T10).
+
+### Task T10 — *(absorbed by T9)*
 ### Task T11 — DTOs: `CreateListingRequest`, `UpdateListingRequest`, `ChangeStatusRequest`, `ListingResponse`, `ListingSummary`, `PagedListings`
 ### Task T12 — `ListingService.create` + 8 unit tests
 ### Task T13 — `ListingService.update` + 7 unit tests

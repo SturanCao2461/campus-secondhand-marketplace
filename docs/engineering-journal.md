@@ -875,4 +875,49 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 1 T5–T7 complete (D-40, D-41). 49 backend tests green; `GET /api/categories` ships; integration-test infrastructure switched to singleton-container pattern.*
+### D-42 — `Listing` entity ships with 4 indexes baked in, `condition` backtick gotcha, schema verified via `information_schema`
+
+**Date / where** Epic 2 Phase 1 T8, 2026-05-15
+**Choice** `Listing` is a single JPA entity carrying all 16 columns (id, owner FK, title, description, price, original_price, category FK, image_path, status, listing_type, condition, meet_at, negotiable, reason_for_selling, created_at/updated_at/deleted_at). Both relationships use `@ManyToOne(fetch = LAZY)`. The 4 indexes — `idx_listings_owner`, `idx_listings_status`, `idx_listings_created`, `idx_listings_image` — are declared up-front via `@Index` annotations on `@Table`, even though only "My Listings" needs the owner index in this Epic.
+**Why** Index strategy is read-driven: `idx_listings_owner` covers `WHERE owner_id = ?` (My Listings page); `idx_listings_status` covers Epic 3's public list `WHERE status = 'AVAILABLE'`; `idx_listings_created` supports the universal `ORDER BY created_at DESC` sort; `idx_listings_image` is non-obvious — it backs the §7.5 image-access owner check `WHERE image_path = ?`. Creating all four now avoids a later `ALTER TABLE` migration on a populated production table. Adding an index to a small empty table is free; adding it later requires careful coordination.
+**Trade-off accepted** Pre-creating Epic 3's index now means the categories.id and owner_id FKs each get *two* indexes — Hibernate auto-creates one for the FK constraint, and we explicitly named another for read patterns. MySQL won't merge them, costing ~16 bytes/row of disk. At thesis-project scale (~1000 listings expected) this is invisible. At industrial scale you'd drop the explicit index and rely on the FK auto-index, accepting the auto-generated index name.
+
+> 💡 中文要点：4 个索引一次到位的策略：①`owner_id`（"我的发布"页面）；②`status`（Epic 3 的公开列表）；③`created_at`（默认排序）；④`image_path`（图片访问的归属校验，spec §7.5）。**第 4 个最不直观但最关键** —— 没有它，每次取图都要全表扫描验证归属。空表加索引零成本，上线后再加要协调迁移，所以提前建。
+
+---
+
+### D-43 — `condition` is a MySQL reserved word; column name needs backtick quoting in `@Column(name = "\`condition\`")`
+
+**Date / where** Epic 2 Phase 1 T8, 2026-05-15
+**Symptom** A naive `@Column(name = "condition")` would have produced syntax errors when Hibernate generated `CREATE TABLE … condition VARCHAR(20) …` because MySQL reserves `CONDITION` for stored-procedure flow control.
+**Fix** Wrap the column name in backticks at the JPA annotation level: `@Column(name = "\`condition\`")`. Hibernate passes the literal string through to the DDL emitter, which preserves the backticks. Raw JDBC reads must use the same backtick form: ``SELECT `condition` FROM listings WHERE id = ?``.
+**Lesson** When a domain word collides with a SQL reserved word, keep the Java field name natural (here, `condition` is the most readable choice for "item condition") and pay the price at one layer — the `@Column` annotation. Don't rename the Java field to dodge the reservation; the readability tax is permanent and infectious. Backticks stay localized to two places: the entity annotation and any raw SQL that reads the column.
+
+> 💡 中文要点：`condition` 是 MySQL 保留字（用于存储过程的流程控制）。Java 字段名想用 `condition` 时只需在 `@Column(name = "\`condition\`")` 加反引号即可，让 Hibernate 把反引号原样写进 DDL。不要为绕开保留字而改 Java 字段名 —— 可读性损失永久存在，反引号只本地化到两处（注解和原生 SQL）。
+
+---
+
+### D-44 — Verify generated schema with `information_schema.statistics`, not by round-tripping rows
+
+**Date / where** Epic 2 Phase 1 T8, 2026-05-15
+**Symptom** When `ddl-auto=update` generates the schema, "did Hibernate emit the index I declared?" is a real question. Round-tripping a row checks the table exists and columns persist, but it does **not** verify that named indexes were actually created — you only notice missing indexes years later when a query plan does a full table scan.
+**Choice** Two-pronged schema integration test: ①`SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'listings'` confirms the table exists; ②`SELECT DISTINCT index_name FROM information_schema.statistics WHERE table_name = 'listings'` and assert `containsAll` of the four named indexes. The third and fourth tests do a row-level round-trip to verify column types, defaults, and `@Enumerated(EnumType.STRING)` persistence (not ordinal).
+**Lesson** When schema is a *side effect* of code (JPA `ddl-auto`) rather than an artifact (Flyway), tests must assert the side effect directly. `information_schema` is the cheapest, most direct probe: structural questions get structural answers. Functional behavior (round-trip) cannot substitute for structural assertions about the schema you intended to declare.
+
+> 💡 中文要点：schema 由 `ddl-auto=update` 生成意味着"我写的 `@Index` 真的进了数据库吗？"是个**必须验证**的问题——光靠"存进去再读出来"测不到索引存不存在。最直接的查法是 `information_schema.statistics`：表名+索引名一目了然。结构性的问题就要用结构性的查询去验证，不要拿功能性的往返当替代。
+
+---
+
+### D-45 — JPA tests need `@Transactional` to safely traverse `LAZY` associations
+
+**Date / where** Epic 2 Phase 1 T8, 2026-05-15
+**Symptom** The first `findById` round-trip test threw `org.hibernate.LazyInitializationException: Could not initialize proxy [Category#1] - no session` when calling `loaded.getCategory().getCode()`. The Listing came back fine; touching the lazy `category` proxy after the repository call had returned was the trigger.
+**Root cause** `@SpringBootTest` does not start a transaction around test methods by default. JpaRepository methods open a transaction internally, complete, and close it. The returned entity carries `@ManyToOne(fetch=LAZY)` proxies that need an active session to resolve. Outside the repository call's transaction, those proxies are detached and any access fails.
+**Fix** Annotate the test class with `@Transactional`. Each test method runs inside a transaction, the session stays open for its duration, lazy proxies resolve transparently. Spring Boot tests default to auto-rollback at method end, so this also gives free per-method data isolation.
+**Lesson** "Repository call returns the entity" is *not* the same as "the entity is fully usable forever." LAZY associations carry a hidden contract — they need a session. Production service code is `@Transactional` by default, so the contract is invisible there. Tests that mimic service-layer access must opt into the same transactional scope, or restrict assertions to fields that don't trigger LAZY load.
+
+> 💡 中文要点：JPA 集成测试访问 `@ManyToOne(fetch=LAZY)` 关系前必须给测试类加 `@Transactional`。仓库方法返回实体后事务就关了，LAZY proxy 失去 session，触发 `LazyInitializationException`。生产 service 代码自带 `@Transactional` 所以看不到这个坑——测试要复刻同款上下文才能覆盖到 LAZY 字段。Spring 测试加 `@Transactional` 顺带还有自动回滚 = 每方法数据隔离的好处。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 1 T8 complete (D-42..D-45). 53 backend tests green; `Listing` entity + 3 enums + 4 indexes shipped via JPA `ddl-auto=update`; schema verified through `information_schema`.*
