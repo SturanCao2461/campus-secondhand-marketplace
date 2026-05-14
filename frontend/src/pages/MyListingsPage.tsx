@@ -47,7 +47,19 @@ export function MyListingsPage() {
         ))}
       </div>
 
-      {loading && <p className="text-gray-500">Loading...</p>}
+      {loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="border rounded-lg overflow-hidden animate-pulse">
+              <div className="w-full h-40 bg-gray-200" />
+              <div className="p-3 space-y-2">
+                <div className="h-4 bg-gray-200 rounded w-3/4" />
+                <div className="h-3 bg-gray-200 rounded w-1/2" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {error && <p className="text-red-600">{error}</p>}
 
       {!loading && !error && data && data.items.length === 0 && (

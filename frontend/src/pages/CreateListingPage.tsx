@@ -8,6 +8,7 @@ export function CreateListingPage() {
   const navigate = useNavigate()
   const [categories, setCategories] = useState<Category[]>([])
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -17,6 +18,7 @@ export function CreateListingPage() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError('')
+    setFieldErrors({})
     setSubmitting(true)
 
     const fd = new FormData(e.currentTarget)
@@ -48,8 +50,12 @@ export function CreateListingPage() {
       await listingsApi.create(multipart)
       navigate('/listings/mine')
     } catch (err) {
-      if (err instanceof ApiError) setError(err.message)
-      else setError('Something went wrong.')
+      if (err instanceof ApiError) {
+        if (err.code === 'INVALID_PRICE') setFieldErrors({ price: err.message })
+        else if (err.code === 'INVALID_CATEGORY') setFieldErrors({ categoryCode: err.message })
+        else if (err.code === 'INVALID_IMAGE' || err.code === 'MISSING_IMAGE') setFieldErrors({ image: err.message })
+        else setError(err.message)
+      } else setError('Something went wrong.')
     } finally {
       setSubmitting(false)
     }
@@ -93,6 +99,7 @@ export function CreateListingPage() {
             <label className="block text-sm font-medium mb-1">Price</label>
             <input name="price" type="number" step="0.01" min="0"
               className="w-full border rounded px-3 py-2" />
+            {fieldErrors.price && <p className="text-red-600 text-xs mt-1">{fieldErrors.price}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Original Price</label>
@@ -131,6 +138,7 @@ export function CreateListingPage() {
           <label className="block text-sm font-medium mb-1">Image *</label>
           <input name="image" type="file" accept="image/jpeg,image/png,image/webp" required
             className="w-full" />
+          {fieldErrors.image && <p className="text-red-600 text-xs mt-1">{fieldErrors.image}</p>}
         </div>
         <button type="submit" disabled={submitting}
           className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50">
