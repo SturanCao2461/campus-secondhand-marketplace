@@ -110,6 +110,272 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
     }
 
+    // ---------- T22: create / list / get / update ----------
+
+    @Test
+    void createWithInvalidCategoryReturns400() throws Exception {
+        register("cat-err@students.waikato.ac.nz", "Pass1234", "CatErr");
+        String cookie = loginAndGetCookie("cat-err@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> r = createListing(cookie,
+                """
+                {"title":"Bad Cat","description":"Test",
+                 "categoryCode":"NONEXISTENT","listingType":"SELL","price":10.00}
+                """);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(r.getBody().get("code").asText()).isEqualTo("INVALID_CATEGORY");
+    }
+
+    @Test
+    void createSellWithoutPriceReturns400() throws Exception {
+        register("no-price@students.waikato.ac.nz", "Pass1234", "NoPrice");
+        String cookie = loginAndGetCookie("no-price@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> r = createListing(cookie,
+                """
+                {"title":"No Price","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL"}
+                """);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(r.getBody().get("code").asText()).isEqualTo("INVALID_PRICE");
+    }
+
+    @Test
+    void createGiveawayIgnoresPrice() throws Exception {
+        register("giveaway@students.waikato.ac.nz", "Pass1234", "Giver");
+        String cookie = loginAndGetCookie("giveaway@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> r = createListing(cookie,
+                """
+                {"title":"Free Item","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"GIVEAWAY","price":99.00}
+                """);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(r.getBody().get("price").isNull()).isTrue();
+        assertThat(r.getBody().get("listingType").asText()).isEqualTo("GIVEAWAY");
+    }
+
+    @Test
+    void unauthenticatedCreateReturns401() throws Exception {
+        ResponseEntity<JsonNode> r = createListing("invalid-cookie=xyz",
+                """
+                {"title":"Unauth","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void getOneReturnsFullListingResponse() throws Exception {
+        register("detail@students.waikato.ac.nz", "Pass1234", "Detail");
+        String cookie = loginAndGetCookie("detail@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> created = createListing(cookie,
+                """
+                {"title":"Detail Test","description":"Full description here",
+                 "categoryCode":"ELECTRONICS","listingType":"SELL","price":99.99,
+                 "condition":"LIKE_NEW","meetAt":"Hub","negotiable":true}
+                """);
+        long id = created.getBody().get("id").asLong();
+
+        ResponseEntity<JsonNode> r = getJson("/api/listings/" + id, cookie);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r.getBody().get("title").asText()).isEqualTo("Detail Test");
+        assertThat(r.getBody().get("description").asText()).isEqualTo("Full description here");
+        assertThat(r.getBody().get("condition").asText()).isEqualTo("LIKE_NEW");
+        assertThat(r.getBody().get("meetAt").asText()).isEqualTo("Hub");
+        assertThat(r.getBody().get("negotiable").asBoolean()).isTrue();
+        assertThat(r.getBody().get("category").get("code").asText()).isEqualTo("ELECTRONICS");
+    }
+
+    @Test
+    void updateChangesFieldsAndKeepsImage() throws Exception {
+        register("updater@students.waikato.ac.nz", "Pass1234", "Updater");
+        String cookie = loginAndGetCookie("updater@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> created = createListing(cookie,
+                """
+                {"title":"Original","description":"Orig desc",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":20.00}
+                """);
+        long id = created.getBody().get("id").asLong();
+        String originalImageUrl = created.getBody().get("imageUrl").asText();
+
+        ResponseEntity<JsonNode> updated = updateListing(cookie, id,
+                """
+                {"title":"Updated","description":"New desc",
+                 "categoryCode":"ELECTRONICS","listingType":"SELL","price":50.00}
+                """, false);
+        assertThat(updated.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(updated.getBody().get("title").asText()).isEqualTo("Updated");
+        assertThat(updated.getBody().get("description").asText()).isEqualTo("New desc");
+        assertThat(updated.getBody().get("price").asDouble()).isEqualTo(50.00);
+        assertThat(updated.getBody().get("category").get("code").asText()).isEqualTo("ELECTRONICS");
+        assertThat(updated.getBody().get("imageUrl").asText()).isEqualTo(originalImageUrl);
+    }
+
+    @Test
+    void updateRemovedListingReturns400() throws Exception {
+        register("upd-rem@students.waikato.ac.nz", "Pass1234", "UpdRem");
+        String cookie = loginAndGetCookie("upd-rem@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> created = createListing(cookie,
+                """
+                {"title":"Will Remove","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
+        long id = created.getBody().get("id").asLong();
+        deleteReq("/api/listings/" + id, cookie);
+
+        ResponseEntity<JsonNode> r = updateListing(cookie, id,
+                """
+                {"title":"Try Update","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """, false);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(r.getBody().get("code").asText()).isEqualTo("LISTING_REMOVED");
+    }
+
+    // ---------- T23: status / delete / image / categories ----------
+
+    @Test
+    void statusTransitionAvailableToReservedToSold() throws Exception {
+        register("fsm@students.waikato.ac.nz", "Pass1234", "FSM");
+        String cookie = loginAndGetCookie("fsm@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> created = createListing(cookie,
+                """
+                {"title":"FSM Test","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
+        long id = created.getBody().get("id").asLong();
+
+        ResponseEntity<JsonNode> r1 = patchJson("/api/listings/" + id + "/status", cookie,
+                Map.of("newStatus", "RESERVED"));
+        assertThat(r1.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r1.getBody().get("status").asText()).isEqualTo("RESERVED");
+
+        ResponseEntity<JsonNode> r2 = patchJson("/api/listings/" + id + "/status", cookie,
+                Map.of("newStatus", "SOLD"));
+        assertThat(r2.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r2.getBody().get("status").asText()).isEqualTo("SOLD");
+    }
+
+    @Test
+    void statusTransitionSoldBackToAvailable() throws Exception {
+        register("relist@students.waikato.ac.nz", "Pass1234", "Relist");
+        String cookie = loginAndGetCookie("relist@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> created = createListing(cookie,
+                """
+                {"title":"Relist Test","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
+        long id = created.getBody().get("id").asLong();
+        patchJson("/api/listings/" + id + "/status", cookie, Map.of("newStatus", "SOLD"));
+
+        ResponseEntity<JsonNode> r = patchJson("/api/listings/" + id + "/status", cookie,
+                Map.of("newStatus", "AVAILABLE"));
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r.getBody().get("status").asText()).isEqualTo("AVAILABLE");
+    }
+
+    @Test
+    void invalidStatusTransitionReturns400() throws Exception {
+        register("bad-fsm@students.waikato.ac.nz", "Pass1234", "BadFSM");
+        String cookie = loginAndGetCookie("bad-fsm@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> created = createListing(cookie,
+                """
+                {"title":"Bad FSM","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
+        long id = created.getBody().get("id").asLong();
+        deleteReq("/api/listings/" + id, cookie);
+
+        ResponseEntity<JsonNode> r = patchJson("/api/listings/" + id + "/status", cookie,
+                Map.of("newStatus", "AVAILABLE"));
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(r.getBody().get("code").asText()).isEqualTo("INVALID_STATUS_TRANSITION");
+    }
+
+    @Test
+    void nonOwnerDeleteReturns404() throws Exception {
+        register("own-del@students.waikato.ac.nz", "Pass1234", "OwnDel");
+        String ownerCookie = loginAndGetCookie("own-del@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> created = createListing(ownerCookie,
+                """
+                {"title":"Owner Only","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
+        long id = created.getBody().get("id").asLong();
+
+        register("thief@students.waikato.ac.nz", "Pass5678", "Thief");
+        String thiefCookie = loginAndGetCookie("thief@students.waikato.ac.nz", "Pass5678");
+        ResponseEntity<Void> r = deleteReq("/api/listings/" + id, thiefCookie);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void listMineWithStatusFilter() throws Exception {
+        register("filter@students.waikato.ac.nz", "Pass1234", "Filter");
+        String cookie = loginAndGetCookie("filter@students.waikato.ac.nz", "Pass1234");
+        createListing(cookie, """
+                {"title":"A1","description":"T","categoryCode":"BOOKS","listingType":"SELL","price":1.00}""");
+        ResponseEntity<JsonNode> c2 = createListing(cookie, """
+                {"title":"A2","description":"T","categoryCode":"BOOKS","listingType":"SELL","price":2.00}""");
+        long id2 = c2.getBody().get("id").asLong();
+        patchJson("/api/listings/" + id2 + "/status", cookie, Map.of("newStatus", "RESERVED"));
+
+        ResponseEntity<JsonNode> all = getJson("/api/listings/me", cookie);
+        assertThat(all.getBody().get("totalItems").asInt()).isEqualTo(2);
+
+        ResponseEntity<JsonNode> reserved = getJson("/api/listings/me?status=RESERVED", cookie);
+        assertThat(reserved.getBody().get("totalItems").asInt()).isEqualTo(1);
+        assertThat(reserved.getBody().get("items").get(0).get("title").asText()).isEqualTo("A2");
+    }
+
+    @Test
+    void imageServedToOwnerWithCacheHeaders() throws Exception {
+        register("img-own@students.waikato.ac.nz", "Pass1234", "ImgOwn");
+        String cookie = loginAndGetCookie("img-own@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> created = createListing(cookie,
+                """
+                {"title":"Img Test","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
+        String imageUrl = created.getBody().get("imageUrl").asText();
+
+        HttpHeaders h = new HttpHeaders();
+        h.add(HttpHeaders.COOKIE, cookie);
+        ResponseEntity<byte[]> r = rest.exchange(imageUrl, HttpMethod.GET,
+                new HttpEntity<>(h), byte[].class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r.getHeaders().getFirst("Cache-Control")).contains("max-age=86400");
+        assertThat(r.getBody()).isNotNull();
+        assertThat(r.getBody().length).isGreaterThan(0);
+    }
+
+    @Test
+    void imageNotServedToNonOwner() throws Exception {
+        register("img-own2@students.waikato.ac.nz", "Pass1234", "ImgOwn2");
+        String ownerCookie = loginAndGetCookie("img-own2@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> created = createListing(ownerCookie,
+                """
+                {"title":"Img Private","description":"Test",
+                 "categoryCode":"BOOKS","listingType":"SELL","price":10.00}
+                """);
+        String imageUrl = created.getBody().get("imageUrl").asText();
+
+        register("img-spy@students.waikato.ac.nz", "Pass5678", "ImgSpy");
+        String spyCookie = loginAndGetCookie("img-spy@students.waikato.ac.nz", "Pass5678");
+        HttpHeaders h = new HttpHeaders();
+        h.add(HttpHeaders.COOKIE, spyCookie);
+        ResponseEntity<JsonNode> r = rest.exchange(imageUrl, HttpMethod.GET,
+                new HttpEntity<>(h), JsonNode.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void categoriesEndpointReturns8SeededCategories() {
+        register("cat-chk@students.waikato.ac.nz", "Pass1234", "CatChk");
+        String cookie = loginAndGetCookie("cat-chk@students.waikato.ac.nz", "Pass1234");
+        ResponseEntity<JsonNode> r = getJson("/api/categories", cookie);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r.getBody().get("items").size()).isEqualTo(8);
+    }
+
     // ---------- helpers ----------
 
     private byte[] tinyJpeg() throws IOException {
@@ -125,11 +391,9 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
         h.add(HttpHeaders.COOKIE, cookie);
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        // listing part as JSON
         HttpHeaders listingHeaders = new HttpHeaders();
         listingHeaders.setContentType(MediaType.APPLICATION_JSON);
         body.add("listing", new HttpEntity<>(listingJson, listingHeaders));
-        // image part
         ByteArrayResource imageResource = new ByteArrayResource(tinyJpeg()) {
             @Override public String getFilename() { return "test.jpg"; }
         };
@@ -138,6 +402,28 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
         body.add("image", new HttpEntity<>(imageResource, imageHeaders));
 
         return rest.exchange("/api/listings", HttpMethod.POST,
+                new HttpEntity<>(body, h), JsonNode.class);
+    }
+
+    private ResponseEntity<JsonNode> updateListing(String cookie, long id, String listingJson, boolean includeImage) throws IOException {
+        HttpHeaders h = new HttpHeaders();
+        h.setContentType(MediaType.MULTIPART_FORM_DATA);
+        h.add(HttpHeaders.COOKIE, cookie);
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        HttpHeaders listingHeaders = new HttpHeaders();
+        listingHeaders.setContentType(MediaType.APPLICATION_JSON);
+        body.add("listing", new HttpEntity<>(listingJson, listingHeaders));
+        if (includeImage) {
+            ByteArrayResource imageResource = new ByteArrayResource(tinyJpeg()) {
+                @Override public String getFilename() { return "updated.jpg"; }
+            };
+            HttpHeaders imageHeaders = new HttpHeaders();
+            imageHeaders.setContentType(MediaType.IMAGE_JPEG);
+            body.add("image", new HttpEntity<>(imageResource, imageHeaders));
+        }
+
+        return rest.exchange("/api/listings/" + id, HttpMethod.PUT,
                 new HttpEntity<>(body, h), JsonNode.class);
     }
 
