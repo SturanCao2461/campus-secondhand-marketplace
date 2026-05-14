@@ -656,6 +656,77 @@ git commit -m "feat(backend): Listing entity + 3 enums + 4 indexes + minimal rep
 
 ### Task T10 — *(absorbed by T9)*
 ### Task T11 — DTOs: `CreateListingRequest`, `UpdateListingRequest`, `ChangeStatusRequest`, `ListingResponse`, `ListingSummary`, `PagedListings`
+
+> **Style note**: All DTOs are Java `record` per the Epic 1 precedent (`RegisterRequest`, `UserResponse`, `CategoryResponse`). Bean Validation annotations sit on `record` components. Response DTOs expose a static `from(...)` factory for entity-to-DTO mapping.
+
+**Files:**
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/CreateListingRequest.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/UpdateListingRequest.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/ChangeStatusRequest.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/ListingResponse.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/ListingSummary.java`
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/dto/PagedListings.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/dto/ListingDtoTest.java`
+
+- [ ] **Step 1: Write the failing DTO test (~7 cases)**
+
+Pure POJO test, no Spring context. Covers:
+1. `ListingResponse.from(Listing)` builds the URL form (`imageUrl = "/api/uploads/" + image_path`)
+2. `ListingResponse.from` carries the nested `CategoryResponse`
+3. `ListingSummary.from` includes only the slim field set; description / meetAt / reasonForSelling are absent
+4. `PagedListings.from(Page<Listing>)` maps page metadata: page (number), pageSize (size), totalPages, totalItems
+5. `PagedListings.from` items list contains `ListingSummary` instances (not `Listing`)
+6. `CreateListingRequest` `@Size(max = 80)` on title produces a violation when 81 chars
+7. `CreateListingRequest` `@NotBlank` on title produces a violation when empty
+
+- [ ] **Step 2: Run test, expect compile failure**
+
+```bash
+./mvnw -Dtest=ListingDtoTest test
+```
+Expected: COMPILE FAIL — DTO classes don't exist yet.
+
+- [ ] **Step 3: Create the 3 Request DTOs**
+
+`CreateListingRequest` carries: title (`@NotBlank @Size(max=80)`), description (`@NotBlank @Size(max=2000)`), categoryCode (`@NotBlank`), listingType (`@NotNull`), price (BigDecimal, optional), originalPrice (BigDecimal, optional), condition (Condition enum, optional), meetAt (`@Size(max=100)`, optional), negotiable (Boolean, optional), reasonForSelling (`@Size(max=100)`, optional). No `image` field — multipart handling stays in the controller.
+
+`UpdateListingRequest` mirrors `CreateListingRequest` exactly. Kept as a separate type for naming clarity at controller signatures and to absorb future divergence without a refactor.
+
+`ChangeStatusRequest`: single `@NotNull ListingStatus newStatus`.
+
+- [ ] **Step 4: Create the 3 Response DTOs**
+
+`ListingResponse` (full): id, ownerId, title, description, price, originalPrice, category (`CategoryResponse`), imageUrl, status, listingType, condition, meetAt, negotiable, reasonForSelling, createdAt, updatedAt. Static `from(Listing)` factory builds the `imageUrl` as `"/api/uploads/" + entity.getImagePath()` and delegates to `CategoryResponse.from`.
+
+`ListingSummary` (slim, for list view): id, title, price, imageUrl, status, listingType, category (`CategoryResponse`), createdAt. Same `imageUrl` prefix logic.
+
+`PagedListings`: `List<ListingSummary> items`, page, pageSize, totalPages, totalItems. Static `from(Page<Listing>)` factory: maps `page.getContent()` to `ListingSummary` instances and pulls `page.getNumber()` / `page.getSize()` / `page.getTotalPages()` / `page.getTotalElements()`.
+
+- [ ] **Step 5: Run DTO test alone**
+
+```bash
+./mvnw -Dtest=ListingDtoTest test
+```
+Expected: PASS — 7/7 green.
+
+- [ ] **Step 6: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 60 + 7 = 67 tests green.
+
+- [ ] **Step 7: Append D-47 to engineering journal**
+
+Two lessons:
+- Why `image_path → imageUrl` translation lives in the DTO factory (single source of truth for URL shape).
+- Why `PagedListings` is a custom record instead of returning Spring's `Page<>` directly (field naming, frontend contract).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git commit -m "feat(backend): listing DTOs (3 request + 3 response) with validation and factories"
+```
 ### Task T12 — `ListingService.create` + 8 unit tests
 ### Task T13 — `ListingService.update` + 7 unit tests
 ### Task T14 — `ListingService.changeStatus` + FSM table + 8 unit tests

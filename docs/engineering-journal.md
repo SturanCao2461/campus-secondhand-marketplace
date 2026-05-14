@@ -931,4 +931,15 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T9 complete (D-42..D-46). 60 backend tests green; `Listing` entity, 4 indexes, and 4 derived queries shipped.*
+### D-47 — Listing DTOs: image-URL prefix lives in the DTO factory; `PagedListings` is a custom record, not Spring's `Page<>`
+
+**Date / where** Epic 2 Phase 1 T11, 2026-05-15
+**Choice** Six DTOs as Java `record` per the Epic 1 precedent. Two design points worth recording. (1) `ListingResponse.from(Listing)` and `ListingSummary.from(Listing)` build the public-facing `imageUrl` by prepending `"/api/uploads/"` to the entity's `imagePath` — this is the single source of truth for that URL shape. (2) `PagedListings` is a hand-rolled `record(List<ListingSummary> items, int page, int pageSize, int totalPages, long totalItems)` populated by a static `from(Page<Listing>)` factory, instead of returning Spring Data's `Page<>` directly to the controller.
+**Why** (1) The relative `imagePath` (e.g. `"listings/abc-123.jpg"`) is what the DB and `LocalImageStorageService` agree on; the URL prefix is a transport-layer concern that belongs at the boundary. Keeping the prefix concatenation inside the DTO factory means *one* file owns the rule. If we later move from `/api/uploads/` to a CDN URL, that's one edit. If 12 controller methods each prepended the prefix inline, we'd be playing whack-a-mole. (2) Spring's `Page<>` JSON serializes with field names that don't match the spec contract (`number` vs `page`, `content` vs `items`, plus a noisy `pageable` object). Returning `Page<>` directly leaks Spring's internal shape into the public API and pins the wire format to whatever Jackson decides about Spring's class. A purpose-built record gives the frontend exactly the contract `spec §6.3` declared.
+**Trade-off accepted** `CreateListingRequest` and `UpdateListingRequest` have identical components today. Keeping them as separate types adds boilerplate but preserves the controller-signature distinction (`PUT /api/listings/{id}` clearly takes an "update" intent, not a "create") and gives a place for divergence (e.g. partial updates) without a downstream refactor.
+
+> 💡 中文要点：DTO 工厂方法 (`from(entity)`) 里干两件 boundary 转换：①`imagePath` → `imageUrl` 加 `/api/uploads/` 前缀（**单点**真理，未来换 CDN 就改一处）；②Spring 的 `Page<>` 用 `number/content` 字段名，跟 spec 期望的 `page/items` 不符——自定义 `PagedListings` record 把契约钉死，避免内部分页类泄漏到 API 表面。`Create/Update` Request 字段相同也写两个 record，给未来差异化留口子。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T11 complete (D-42..D-47). 67 backend tests green; `Listing` entity, 4 indexes, derived queries, and 6 DTOs shipped.*
