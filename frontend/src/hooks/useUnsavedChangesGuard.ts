@@ -1,8 +1,6 @@
-import { useEffect, useCallback } from 'react'
-import { useBlocker } from 'react-router-dom'
+import { useEffect } from 'react'
 
 export function useUnsavedChangesGuard(isDirty: boolean) {
-  // Browser tab close / refresh
   useEffect(() => {
     if (!isDirty) return
     const handler = (e: BeforeUnloadEvent) => {
@@ -12,15 +10,4 @@ export function useUnsavedChangesGuard(isDirty: boolean) {
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
-
-  // React Router navigation
-  const blocker = useBlocker(isDirty)
-
-  useEffect(() => {
-    if (blocker.state === 'blocked') {
-      const leave = window.confirm('You have unsaved changes. Leave this page?')
-      if (leave) blocker.proceed()
-      else blocker.reset()
-    }
-  }, [blocker])
 }
