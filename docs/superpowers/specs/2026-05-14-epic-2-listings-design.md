@@ -252,6 +252,7 @@ CREATE TABLE listings (
 CREATE INDEX idx_listings_owner   ON listings(owner_id);
 CREATE INDEX idx_listings_status  ON listings(status);
 CREATE INDEX idx_listings_created ON listings(created_at);
+CREATE INDEX idx_listings_image   ON listings(image_path);  -- supports the §7.5 image-access owner check
 ```
 
 **Field-level decisions**:
@@ -264,6 +265,7 @@ CREATE INDEX idx_listings_created ON listings(created_at);
 - `idx_listings_owner` — used by the "My Listings" page (`WHERE owner_id = ?`).
 - `idx_listings_status` — used by Epic 3's public list endpoint (`WHERE status = 'AVAILABLE'`); created up-front to avoid an index migration later.
 - `idx_listings_created` — supports the common `ORDER BY created_at DESC` sort.
+- `idx_listings_image` — supports the §7.5 image-access owner check (`WHERE image_path = ?`).
 
 ### 3.3 Entity relationships (ER diagram)
 
@@ -831,7 +833,165 @@ V1 reads `t.xxx.en` only. The structure is intentionally library-free — `react
 
 ---
 
-## (Sections 7–8 to be added incrementally as the design discussion progresses.)
+## 7. Security & Permissions
 
-- §7 Security & Permissions — owner-only 校验位置、错误码、防 IDOR
+Epic 2 introduces the first user-operates-on-others'-data surface, so IDOR (Insecure Direct Object Reference) defenses must be systematic. This section pins down where checks live, the response-shape choices that prevent enumeration, and the rate-limit boundaries.
+
+### 7.1 Threat model
+
+| Vector | Example | Defense |
+|---|---|---|
+| IDOR — edit others | `PUT /api/listings/43` where 43 belongs to someone else | Service-layer owner check (§7.2) |
+| IDOR — delete others | `DELETE /api/listings/43` | Same |
+| IDOR — status manipulation | `PATCH /api/listings/43/status` | Same |
+| Existence enumeration | Sweep ids `1..1000` to distinguish "absent" vs "exists but not mine" | Both paths return the same `404 LISTING_NOT_FOUND` (§7.3) |
+| Path traversal (image) | `GET /api/uploads/listings/../../../../etc/passwd` | §5.6 dual-layer guard |
+| MIME forgery (upload) | Upload `.exe` renamed to `.jpg` | §5.2 magic-number check |
+| CSRF | Third-party site triggers a state-changing request via the user's cookie | Inherited Epic 1 D-19: `SameSite=Lax` + `HttpOnly` |
+| Cookie replay | Stolen cookie reused after logout | Inherited Epic 1 D-13: JWT blacklist + short TTL |
+| Image link leak | Owner shares image URL externally; recipient bypasses listing visibility | §7.5 owner check on `/api/uploads/**` |
+| Spam / abuse / runaway loop | Authenticated user floods create / update / status / delete | §7.8 per-user rate limits |
+
+### 7.2 Owner check lives in the service layer
+
+Owner verification runs at the top of every write method on `ListingService`:
+
+```java
+public Listing update(Long listingId, AuthPrincipal me, UpdateRequest req) {
+    Listing listing = listings.findById(listingId)
+        .orElseThrow(() -> new ApiException(LISTING_NOT_FOUND));
+    if (!listing.getOwnerId().equals(me.userId())) {
+        throw new ApiException(LISTING_NOT_FOUND);  // not NOT_LISTING_OWNER — see §7.3
+    }
+    // apply update
+}
+```
+
+**Alternatives considered**: `@PreAuthorize` SpEL expressions; `if`-checks in the controller.
+
+**Why service-layer**:
+1. Consistent with Epic 1 D-9 / D-10 — business validation belongs in the service.
+2. Unit-testable without bootstrapping Spring Security; pass `AuthPrincipal` directly and assert the exception.
+3. `@PreAuthorize` failures throw `AccessDeniedException` with no structured `ErrorCode`.
+4. Keeps controllers thin (Epic 1 D-23 style).
+
+### 7.3 `404` rather than `403`: deliberate ambiguity
+
+A non-owner who hits another user's listing receives `404 LISTING_NOT_FOUND`, not `403 NOT_LISTING_OWNER`. The 403 code is reserved for client-side preconditions or a future admin view; **the public API never returns it in this Epic**.
+
+**Why**: same anti-enumeration principle as Epic 1 D-11 / D-14 / D-16. If 404 and 403 differed, an attacker scanning ids could distinguish "this id is unused" from "this id exists, owned by someone else" — the latter is a leak.
+
+### 7.4 Validation chain order (preventing leakage)
+
+Every write operation runs checks in strict order; the first failure short-circuits. A failure at step 3 must not reveal whether step 4 would have passed:
+
+1. **Authentication** — enforced by the JWT filter; unauthenticated requests never reach the controller.
+2. **Path-variable resolution + listing existence** → 404 `LISTING_NOT_FOUND` if absent.
+3. **Owner check** → 404 `LISTING_NOT_FOUND` if not owner.
+4. **Business rules** (status editable? transition legal? field values valid?) → specific error codes.
+
+This ordering ensures that a non-owner cannot probe the listing's status or other state via differential responses.
+
+### 7.5 Image access also performs an owner check
+
+`GET /api/uploads/listings/{filename}` enforces ownership: the request resolves the filename to its `Listing` via the DB (`image_path` is unique enough that one indexed lookup suffices), and refuses if the requester is not the owner.
+
+```java
+@GetMapping("/api/uploads/listings/{filename:.+}")
+public ResponseEntity<Resource> serveImage(@PathVariable String filename,
+                                           @AuthenticationPrincipal AuthPrincipal me) {
+    Listing l = listings.findByImagePath("listings/" + filename)
+        .orElseThrow(() -> new ApiException(LISTING_NOT_FOUND));
+    if (!l.getOwnerId().equals(me.userId())) {
+        throw new ApiException(LISTING_NOT_FOUND);
+    }
+    return imageStorage.load(l.getImagePath()) ...
+}
+```
+
+**Why this is added** (revising the original "UUID is unguessable so skip" reasoning):
+1. Image URLs leak in practice — owners share screenshots with the URL bar visible, browser history is synced, pasted links live in chats.
+2. The extra DB query is one indexed lookup on `image_path` — well under 1 ms locally; cacheable if it ever becomes hot.
+3. Aligns with the project-wide "completeness over minimalism" stance.
+4. Epic 3 will relax this to `permitAll` for `AVAILABLE` listings only — the relaxation is per-status, not unconditional.
+
+A new index `idx_listings_image` on the `listings` table (added in §3.2) keeps this lookup `O(log n)`.
+
+### 7.6 Input validation: DTO annotations plus service rules
+
+Inherits Epic 1 D-10:
+
+| Layer | Checks |
+|---|---|
+| DTO (`@Valid`) | Field non-null, length caps, `@DecimalMin`, etc. |
+| Service | Business rules — categoryCode exists and active; SELL needs `price > 0`; status transition legal |
+
+`CreateListingRequest`, `UpdateListingRequest`, `ChangeStatusRequest` all use `@Valid` at the controller boundary; service methods perform the additional business validation and throw `ApiException`, mapped by `GlobalExceptionHandler`.
+
+### 7.7 `SecurityConfig` changes
+
+```java
+.authorizeHttpRequests(auth -> auth
+    // existing Epic 1 rules carry over
+    .requestMatchers(HttpMethod.GET, "/api/categories").authenticated()
+    .requestMatchers("/api/listings/**").authenticated()
+    .requestMatchers("/api/uploads/**").authenticated()
+    .anyRequest().authenticated()
+)
+.csrf(AbstractHttpConfigurer::disable)  // unchanged from Epic 1 D-19
+```
+
+Multipart requests pass through the existing filter chain; no new filter required.
+
+### 7.8 Rate limiting (per-user, per-endpoint)
+
+Even authenticated users can abuse write endpoints. The `RateLimitService` from Epic 1 D-3 is reused; new key prefixes are added:
+
+| Endpoint | Key | Limit | Window | Rationale |
+|---|---|---|---|---|
+| `POST /api/listings` | `ratelimit:listing:create:<userId>` | **20** | 1 hour | Spam-listing prevention; far above any legitimate user rate. Stripe-class write quota. |
+| `PUT /api/listings/{id}` | `ratelimit:listing:update:<userId>` | **60** | 1 hour | Defends against runaway client loops; far above realistic editing pace. |
+| `PATCH /api/listings/{id}/status` | `ratelimit:listing:status:<userId>` | **120** | 1 hour | Light operation; allows quick UI-driven flips. |
+| `DELETE /api/listings/{id}` | `ratelimit:listing:delete:<userId>` | **30** | 1 hour | Destructive — kept tighter. |
+| Image bytes uploaded | `ratelimit:listing:imagebytes:<userId>` | **50 MB** | 1 hour | Disk-exhaustion ceiling; complements per-call counts. |
+| Read endpoints (`GET /me`, `GET /:id`, `GET /uploads/**`, `GET /categories`) | — | **none** | — | Industry standard: read endpoints are unrestricted unless cache-busting becomes a concern. |
+
+**Key choices**:
+- **By `userId`, not by IP** — campus / corporate networks share NAT; per-IP limits would lock everyone behind the same egress.
+- **All limits return `429 Too Many Requests` with `Retry-After: <seconds>`** — see §7.10 for the Epic 1 fix that enables this.
+- **One-hour windows** — short enough to recover quickly, long enough that bursts cannot dodge by waiting a few seconds.
+- **No global / application-layer DoS limit** — that belongs to nginx / Cloudflare in front of the app. Documented to keep concerns separate.
+
+The byte-counting limiter needs `RateLimitService.incrementBy(key, bytes, ttl)` — a small extension to Epic 1's `increment(key)`. Both delegate to Redis `INCRBY` + `EXPIRE`.
+
+### 7.9 Audit logging
+
+Structured INFO-level logs in the service layer for every state-changing operation:
+
+```java
+log.info("listing.create userId={} listingId={} categoryCode={} listingType={}", ...);
+log.info("listing.update userId={} listingId={} fieldsChanged={}", ...);
+log.info("listing.statusChange userId={} listingId={} from={} to={}", ...);
+log.info("listing.remove userId={} listingId={}", ...);
+log.info("listing.imageServe userId={} listingId={} filename={}", ...);
+```
+
+Sensitive content excluded: image bytes, raw email addresses (use `userId` instead).
+
+### 7.10 Epic 1 carry-over fix: `429` with `Retry-After`
+
+Epic 1's `TOO_MANY_ATTEMPTS` currently maps to HTTP `400` (the default for `ApiException`). The industry standard is `429 Too Many Requests` plus a `Retry-After` header indicating the seconds until the window resets.
+
+**Fix scope** (small, lands alongside the Epic 2 rate-limit code):
+1. Extend `ErrorCode` so each entry carries an `HttpStatus` (default `BAD_REQUEST`); `TOO_MANY_ATTEMPTS` overrides to `TOO_MANY_REQUESTS`.
+2. `GlobalExceptionHandler.handleApiException` reads the override and sets the response status accordingly.
+3. `ApiException(TOO_MANY_ATTEMPTS, ...)` accepts an optional `retryAfterSeconds` payload; the handler emits `Retry-After: <seconds>`.
+4. `RateLimitService.exceeded()` returns the remaining TTL alongside the boolean so callers can populate `retryAfterSeconds`.
+
+This brings Epic 1's existing login / register limits up to spec **and** wires the same plumbing for the new Epic 2 limits — done once for both.
+
+---
+
+## (Section 8 to be added incrementally as the design discussion progresses.)
+
 - §8 Testing Strategy — 单元 / 组件 / 集成 三层测试边界
