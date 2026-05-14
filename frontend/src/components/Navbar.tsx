@@ -19,6 +19,7 @@ export function Navbar() {
         <nav className="flex items-center gap-4 text-sm">
           {user ? (
             <>
+              <Link to="/listings/mine" className="text-slate-700 hover:underline">My Listings</Link>
               <span className="text-slate-600">Hi, {user.nickname}</span>
               <button
                 onClick={onLogout}

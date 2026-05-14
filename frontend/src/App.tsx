@@ -8,6 +8,10 @@ import { RegisterPage } from './pages/RegisterPage'
 import { LoginPage } from './pages/LoginPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { CreateListingPage } from './pages/CreateListingPage'
+import { MyListingsPage } from './pages/MyListingsPage'
+import { ListingDetailPage } from './pages/ListingDetailPage'
+import { EditListingPage } from './pages/EditListingPage'
 
 export default function App() {
   return (
@@ -21,6 +25,10 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/me" element={<ProtectedRoute><MePage /></ProtectedRoute>} />
+          <Route path="/listings/new" element={<ProtectedRoute><CreateListingPage /></ProtectedRoute>} />
+          <Route path="/listings/mine" element={<ProtectedRoute><MyListingsPage /></ProtectedRoute>} />
+          <Route path="/listings/:id" element={<ProtectedRoute><ListingDetailPage /></ProtectedRoute>} />
+          <Route path="/listings/:id/edit" element={<ProtectedRoute><EditListingPage /></ProtectedRoute>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
