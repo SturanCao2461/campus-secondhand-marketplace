@@ -32,9 +32,11 @@ class CategoryControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void unauthenticatedRequestIsRejected() {
+    void unauthenticatedRequestReturnsCategories() {
+        // Categories are now public (Epic 3: browse page needs them without login)
         ResponseEntity<JsonNode> r = rest.getForEntity("/api/categories", JsonNode.class);
-        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(r.getBody().get("items").size()).isEqualTo(8);
     }
 
     @Test

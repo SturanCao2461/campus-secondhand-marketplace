@@ -1,12 +1,14 @@
 package nz.ac.waikato.campusmarketplace.controller;
 
 import jakarta.validation.Valid;
+import nz.ac.waikato.campusmarketplace.dto.BrowseQuery;
 import nz.ac.waikato.campusmarketplace.dto.ChangeStatusRequest;
 import nz.ac.waikato.campusmarketplace.dto.CreateListingRequest;
 import nz.ac.waikato.campusmarketplace.dto.ListingResponse;
 import nz.ac.waikato.campusmarketplace.dto.PagedListings;
 import nz.ac.waikato.campusmarketplace.dto.UpdateListingRequest;
 import nz.ac.waikato.campusmarketplace.entity.ListingStatus;
+import nz.ac.waikato.campusmarketplace.entity.ListingType;
 import nz.ac.waikato.campusmarketplace.entity.User;
 import nz.ac.waikato.campusmarketplace.exception.ApiException;
 import nz.ac.waikato.campusmarketplace.exception.ErrorCode;
@@ -36,6 +38,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 
 @RestController
@@ -58,6 +61,25 @@ public class ListingController {
         this.imageStorage = imageStorage;
         this.rateLimit = rateLimit;
         this.users = users;
+    }
+
+    @GetMapping
+    public ResponseEntity<PagedListings> browse(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String categoryCode,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) ListingType listingType,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "CREATED_DESC") String sort) {
+        BrowseQuery query = new BrowseQuery(keyword, categoryCode, minPrice, maxPrice, listingType);
+        Pageable pageable = PageRequest.of(page, PAGE_SIZE, mapSort(sort));
+        return ResponseEntity.ok(listingService.browse(query, pageable));
+    }
+
+    @GetMapping("/{id}/detail")
+    public ResponseEntity<ListingResponse> getDetail(@PathVariable Long id) {
+        return ResponseEntity.ok(listingService.getDetail(id));
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
