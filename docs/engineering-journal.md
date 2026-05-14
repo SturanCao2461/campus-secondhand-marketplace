@@ -920,4 +920,15 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 1 T8 complete (D-42..D-45). 53 backend tests green; `Listing` entity + 3 enums + 4 indexes shipped via JPA `ddl-auto=update`; schema verified through `information_schema`.*
+### D-46 — `ListingRepository` derived queries: method-name DSL covers all 4 patterns without a single `@Query`
+
+**Date / where** Epic 2 Phase 1 T9, 2026-05-15
+**Choice** Four derived queries handle every read pattern Phase 1 needs: `findByOwner(User, Pageable)`, `findByOwnerAndStatus(User, ListingStatus, Pageable)`, `findByOwnerAndStatusNot(User, ListingStatus, Pageable)`, and `findByImagePath(String) → Optional<Listing>`. All are pure Spring Data method-name parsing — no `@Query`, no `Specification`, no QueryDSL. The `Pageable` parameter on the first three carries page index, page size, and sort, so the controller layer can map `?page=`, `?size=`, `?sort=` directly without translation logic.
+**Why** Method names *are* the contract. `findByOwnerAndStatusNot(owner, REMOVED, ...)` is self-documenting in a way that a `@Query("SELECT l FROM Listing l WHERE l.owner = ?1 AND l.status <> ?2")` is not. When a future maintainer reads the repository, they see the available reads without skipping into JPQL. The DSL also forces a small, finite vocabulary — if a future query cannot fit the keyword grammar, that is a signal the read is doing too much and probably belongs in a service-layer aggregate, not a repository method.
+**Trade-off accepted** `findByImagePath` returns `Optional<Listing>` despite `image_path` not having a DB UNIQUE constraint. Multiple matches would throw `IncorrectResultSizeDataAccessException`. This is fail-loud-by-design: business logic generates UUID v4 filenames, so a collision indicates a bug worth crashing for, not a normal case to handle. Adding a UNIQUE constraint at the DB level would be belt-and-braces — deferred until image upload (T19) lands so we can assert the invariant in one place rather than two.
+
+> 💡 中文要点：4 个查询全靠 Spring Data 方法名 DSL 解析，零 `@Query`。`findByOwnerAndStatusNot` 这种"否定"关键字也认。`Pageable` 参数把 page/size/sort 三件事一次打包，controller 层不用做参数翻译。`findByImagePath` 返 `Optional` 而非 `List` 是有意 fail-loud 设计：UUID 撞文件名 = 业务 bug，应该崩而不是兜底。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T9 complete (D-42..D-46). 60 backend tests green; `Listing` entity, 4 indexes, and 4 derived queries shipped.*
