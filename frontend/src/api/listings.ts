@@ -42,7 +42,29 @@ export interface MyListingsQuery {
   includeRemoved?: boolean
 }
 
+export interface BrowseQuery {
+  page?: number
+  keyword?: string
+  categoryCode?: string
+  minPrice?: number
+  maxPrice?: number
+  listingType?: ListingType
+  sort?: 'CREATED_DESC' | 'CREATED_ASC' | 'PRICE_DESC' | 'PRICE_ASC'
+}
+
 export const listingsApi = {
+  browse: (q: BrowseQuery) => {
+    const params = new URLSearchParams()
+    if (q.page != null) params.set('page', String(q.page))
+    if (q.keyword) params.set('keyword', q.keyword)
+    if (q.categoryCode) params.set('categoryCode', q.categoryCode)
+    if (q.minPrice != null) params.set('minPrice', String(q.minPrice))
+    if (q.maxPrice != null) params.set('maxPrice', String(q.maxPrice))
+    if (q.listingType) params.set('listingType', q.listingType)
+    if (q.sort) params.set('sort', q.sort)
+    return api.get<PagedListings>(`/api/listings?${params}`)
+  },
+  getDetail: (id: number) => api.get<Listing>(`/api/listings/${id}/detail`),
   create: (form: FormData) => api.postForm<Listing>('/api/listings', form),
   listMine: (q: MyListingsQuery) => {
     const params = new URLSearchParams()

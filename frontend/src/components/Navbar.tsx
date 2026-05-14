@@ -17,6 +17,7 @@ export function Navbar() {
           Campus Marketplace
         </Link>
         <nav className="flex items-center gap-4 text-sm">
+          <Link to="/browse" className="text-slate-700 hover:underline">Browse</Link>
           {user ? (
             <>
               <Link to="/listings/mine" className="text-slate-700 hover:underline">My Listings</Link>
