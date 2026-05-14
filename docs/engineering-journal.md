@@ -852,4 +852,27 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-14 — Epic 2 Phase 0 complete (D-38, D-39). 44 backend tests green; `Retry-After` header now emitted on rate-limit responses.*
+### D-40 — `GET /api/categories` ships the read side of the listing taxonomy
+
+**Date / where** Epic 2 Phase 1 T7, 2026-05-15
+**Choice** A single read-only endpoint `GET /api/categories` returns `{ "items": [{ code, nameEn, nameZh } …] }`, ordered by `sortOrder` ascending, filtered to `active=true`. The shape — wrapping the array in an `items` key rather than returning a bare array — matches the existing `PagedListings` contract and leaves headroom for cursor or filter metadata later without breaking clients.
+**Why** The frontend `CreateListingPage` will call this once at mount to populate the category `<select>`. Categories are bilingual (`nameEn` / `nameZh`) per the design spec — supplying both fields lets the frontend pick its render language without a second roundtrip. Sorting in the database (via `findAllByActiveTrueOrderBySortOrderAsc`) keeps the controller a pure mapper, and the `active` flag gives operations a way to retire a category without DELETEing rows referenced by historical listings.
+**Trade-off accepted** Endpoint is unauthenticated-rejected (`/api/**` → `authenticated()` in `SecurityConfig`). Anonymous users — including teacher-demo browser sessions before login — cannot prefetch categories. The alternative (adding `/api/categories` to `permitAll`) was rejected to keep the auth boundary simple: every read of business data sits behind login.
+
+> 💡 中文要点：分类接口设计三个细节值得记：①响应包一层 `{ "items": […] }`，给后续加分页/筛选元数据留空间；②`nameEn` + `nameZh` 双语字段一次返回，让前端按 i18n 自取其一；③`active` 软删除字段保留历史 listing 的外键完整性。`sortOrder ASC` 排序在 DB 层做，Controller 只做 entity→DTO 映射，3 行代码。
+
+---
+
+### D-41 — Testcontainers singleton pattern fixes the cross-class context-cache crash
+
+**Date / where** Epic 2 Phase 1 T7, 2026-05-15
+**Symptom** `CategoryControllerIntegrationTest` passed in isolation but threw `CannotCreateTransactionException: HikariPool-2 - Connection is not available` (root cause: `Connection refused at 0ms`) when run after `AuthControllerIntegrationTest` in the same `./mvnw test` invocation.
+**Root cause** `AbstractIntegrationTest` used `@Testcontainers` + `@Container` (JUnit 5 lifecycle): each subclass started a fresh MySQL/Redis pair on its own random port and stopped them at class teardown. Spring's `TestContext` framework, however, *cached* the `ApplicationContext` across both test classes (matching `@SpringBootTest` config + dynamic properties). Sequence: Auth class started container A, cached context X pointing at A:port-A. Auth class finished → container A stopped. Category class loaded → Spring matched context X from cache → DataSource still pointing at the dead port-A → connection refused 30s later. Single-class runs avoided the bug because no subsequent class ever needed the dead container.
+**Fix** Switched to the [Testcontainers singleton pattern](https://www.testcontainers.org/test_framework_integration/manual_lifecycle_control/#singleton-containers): removed `@Testcontainers`/`@Container`, declared `static final` containers, and started them in a `static {}` block. JVM-scoped lifecycle. Containers boot once at class loading time, are reused across all IT classes, and ryuk cleans them at JVM exit. Runtime dropped from 121s → 23s on the full suite as a side effect.
+**Lesson** Two test-framework concerns silently disagree about lifecycle: `@Container` says "die at class end"; `@SpringBootTest` says "cache contexts across the suite". When they collide on a shared resource (the JDBC URL), the cache wins and points at corpses. The singleton pattern aligns both to JVM scope so they cannot disagree. Watch for any test infrastructure that conflates "lifecycle of *this* class's setup" with "lifecycle of resources that downstream classes depend on" — they should be the same scope or the failure surfaces only when class count > 1.
+
+> 💡 中文要点：Testcontainers + Spring 测试有个隐藏陷阱：`@Container` 注解按"测试类生命周期"关容器，但 Spring `TestContext` 跨类**缓存** ApplicationContext。第一个类跑完关掉容器，第二个类复用 context，里头 DataSource 指向死端口 → `Connection refused`。**根治**：用 singleton 容器模式（`static {}` 启动，永不 stop），把容器对齐到 JVM 生命周期。这次顺带把测试套件从 2 分钟降到 23 秒，因为 mysql + redis 启动只发生一次。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 1 T5–T7 complete (D-40, D-41). 49 backend tests green; `GET /api/categories` ships; integration-test infrastructure switched to singleton-container pattern.*
