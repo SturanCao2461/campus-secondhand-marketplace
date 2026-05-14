@@ -997,4 +997,46 @@ These are personal reflections directly usable in the thesis "Reflection / Perso
 
 ---
 
-*Last updated: 2026-05-15 — Epic 2 Phase 1 T8–T15 complete (D-42..D-52). 99 backend tests green; service layer fully landed (`create` / `update` / `changeStatus` / `listMine` / `getOne` / `remove`); next: T16 controller layer.*
+### D-53 — `ListingController` wiring: AuthPrincipal → User reference, sort string at the boundary, placeholder imagePath
+
+**Date / where** Epic 2 Phase 1 T16, 2026-05-15
+**Choice** `ListingController` exposes 6 endpoints that wrap the 6 `ListingService` public methods. Three wiring choices worth recording. (1) `@AuthenticationPrincipal AuthPrincipal principal` arrives from the JWT filter; `users.getReferenceById(principal.userId())` materializes a JPA entity reference without a `SELECT`, since the service only uses `currentUser.getId()` for FK association and ownership checks. (2) The frontend's sort vocabulary (`CREATED_DESC` / `CREATED_ASC` / `PRICE_DESC` / `PRICE_ASC`) is mapped to Spring's `Sort` at the controller boundary by a private `mapSort(String)` switch — service methods stay `Pageable`-pure. (3) `POST /api/listings` passes a hardcoded `imagePath = "listings/placeholder.jpg"`; `PUT` passes `newImagePath = null`. T19 (Phase 2) will replace these with `imageStorage.store(file)` results. The service signature stays stable across the boundary.
+**Why** *(getReferenceById)* The alternative — `users.findById(principal.userId()).orElseThrow()` — costs an extra DB roundtrip on every authenticated listing endpoint. With JWT auth ratifying the token and the service only needing the FK id, the `SELECT` is wasted I/O. *(sort at boundary)* If the service knew about `"CREATED_DESC"` strings, it would be tied to the frontend's vocabulary; future channels (admin tools, GraphQL) would have to either parrot those strings or duplicate the mapping. Boundary translation lives in one place. *(placeholder imagePath)* Stability of the service contract across phases is a deliberate Phase-1 design decision (see D-48). T19's image upgrade then becomes purely a controller-layer change.
+**Trade-off accepted** SecurityConfig was *not* updated despite spec §7.7 prescribing it: Epic 1's existing `.requestMatchers("/api/**").authenticated()` already covers `/api/listings/**`. The spec was written without checking the actual configuration, so the prescribed update is redundant. Worth a note here so a future reader of spec §7.7 doesn't expect to find a corresponding diff.
+
+> 💡 中文要点：Controller 三个 wiring 决策：①`getReferenceById` 拿 User reference 不查 DB；②sort 字符串映射在 controller 边界做，service 只接 `Pageable`；③Phase 1 imagePath 用占位符（service 签名跨阶段稳定，T19 升级 multipart 只需改 controller）。spec §7.7 prescribed 的 SecurityConfig 修改实际是多余的——Epic 1 的 `/api/**` 已经一刀切覆盖了 listings 路径，spec 没看现状。
+
+---
+
+### D-54 — Hibernate action-queue ordering: `deleteAll` + `save` flushes INSERT before DELETE
+
+**Date / where** Epic 2 Phase 1 T16, 2026-05-15
+**Symptom** `ListingRepositoryTest` and `ListingSchemaIntegrationTest` ran green in isolation but threw `Duplicate entry 'Owner' for key 'users.UK...'` on `users.save(...)` when the full suite ran them after `ListingControllerIntegrationTest`. The controller test (no class-level `@Transactional`) committed real users; the repository test's transactional `setupFixture` then called `users.deleteAll()` + `users.save(...)`, expecting the deletes to land first.
+**Root cause** Spring Data JPA's `JpaRepository.deleteAll()` does a `findAll() + delete(each)` pass that *schedules* deletions in the Hibernate persistence context — it does not issue SQL until flush. The next `users.save(...)` triggers a flush. Hibernate's action queue then orders operations by category: **INSERT → UPDATE → DELETE**. So the new user is INSERTed first, hitting the leftover row from the previous test class. Single-class runs avoided the bug because there were no leftover rows.
+**Fix** Replaced `deleteAll()` with `deleteAllInBatch()` in two test classes' `@BeforeEach`. `deleteAllInBatch()` issues a direct `DELETE FROM table` SQL and bypasses the persistence-context action queue entirely.
+**Lesson** Two pieces of test infrastructure quietly disagreed about lifecycle: integration tests that go through Spring MVC commit real data; transactional repository tests assume a clean slate. The mismatch surfaced as a Hibernate flush-order interaction, not as a teardown bug. When mixing transactional and non-transactional test classes, prefer `deleteAllInBatch` for the cleanup step — it commutes with whatever the previous class left behind. (Same family of bug as D-41: silent disagreement between two test-framework concerns about lifecycle. Two now this Epic.)
+
+> 💡 中文要点：Hibernate persistence context 的 action queue **默认顺序是 INSERT → UPDATE → DELETE**。`deleteAll()` 只把删除 schedule 到 context 而不立即执行 SQL，紧随的 `save()` 触发 flush，flush 时按 INSERT 先 DELETE 后输出，导致新插入撞到本该被删的旧行。修复：用 `deleteAllInBatch()`，它发原生 `DELETE FROM` SQL 立即执行，绕开 action queue。**跨非事务/事务测试类的清理一律用 `deleteAllInBatch`**——这是同 D-41 一族（两个测试框架对生命周期的隐式不一致）的第二例。
+
+---
+
+### D-55 — Phase 1 sealed: 16 commits, 102 tests, full backend listing CRUD ready for Demo #6
+
+**Date / where** Epic 2 Phase 1 T16 close, 2026-05-15
+**Retrospective** Phase 1 ships 16 commits since `d956295` (Category seeder), landing the full read/write listing surface end-to-end:
+- **3 entities** (`Listing` + 3 enums) with 4 named indexes
+- **2 repositories** (`CategoryRepository`, `ListingRepository`) with 4 derived queries
+- **6 DTOs** (3 request / 3 response) with Bean Validation + factory methods
+- **1 service** (`ListingService`) with 6 public methods sharing the §7.4 validation chain
+- **2 controllers** (`CategoryController`, `ListingController`) with 7 endpoints (1 + 6)
+- **8 new ErrorCodes** from spec §4.0
+- **102 tests** (51 unit + 51 integration; 0 flake after the singleton-container fix in D-41 and the deleteAllInBatch fix in D-54)
+- **14 journal entries** (D-40..D-55) capturing every non-obvious decision
+
+**Demo milestone #6 unlocks now.** User to walk through 6 endpoints + 8 transitions in Postman per `feedback_handson_demo.md`. Phase 2 (T17–T21, image upload + rate limits) starts after demo passes.
+
+> 💡 中文要点：**Phase 1 收官**——16 个 commits、102 个测试、3 个 entity、2 个 repository、6 个 DTO、1 个 service（6 方法）、2 个 controller（7 端点）。Demo milestone #6 解锁，可以打开 Postman 端到端走一遍 listing 创建/查/改/状态转/删。下一步 Phase 2 接 image upload。**两次坑都来自"两个测试框架对生命周期不一致"族（D-41 容器、D-54 action queue）**——这种 bug 单跑都看不出，必须全量套件才暴露。
+
+---
+
+*Last updated: 2026-05-15 — Epic 2 Phase 1 sealed (D-42..D-55). 102 backend tests green; full listing CRUD shipped. Demo milestone #6 ready for hands-on walkthrough; Phase 2 (image upload + rate limits) is next.*

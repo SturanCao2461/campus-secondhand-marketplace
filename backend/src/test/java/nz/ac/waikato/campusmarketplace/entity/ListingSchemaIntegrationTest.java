@@ -27,8 +27,8 @@ class ListingSchemaIntegrationTest extends AbstractIntegrationTest {
 
     @BeforeEach
     void clean() {
-        listings.deleteAll();
-        users.deleteAll();
+        listings.deleteAllInBatch();
+        users.deleteAllInBatch();
     }
 
     @Test

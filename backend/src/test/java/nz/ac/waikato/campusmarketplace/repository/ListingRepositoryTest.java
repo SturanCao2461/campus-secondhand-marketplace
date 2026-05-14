@@ -40,8 +40,12 @@ class ListingRepositoryTest extends AbstractIntegrationTest {
 
     @BeforeEach
     void setupFixture() {
-        listings.deleteAll();
-        users.deleteAll();
+        // deleteAllInBatch issues a direct DELETE FROM ... SQL, dodging the
+        // Hibernate action-queue ordering bug where deleteAll + save can
+        // INSERT before DELETE and collide with leftover rows from prior
+        // non-transactional integration tests.
+        listings.deleteAllInBatch();
+        users.deleteAllInBatch();
 
         owner = users.save(User.builder()
                 .email("owner@students.waikato.ac.nz")

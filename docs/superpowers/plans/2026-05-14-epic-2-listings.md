@@ -19,7 +19,7 @@ The plan is organised into 6 phases with 44 tasks total. Each phase ends at a de
 | Phase | Tasks | Focus | Demo |
 |---|---|---|---|
 | 0 — Infrastructure + Epic 1 fixes | T1–T4 | Global error→HTTP mapping, `Retry-After`, RateLimit extensions | #5 (login returns 429) |
-| 1 — Backend listing CRUD | T5–T16 | DB tables, entities, services, 5 endpoints (no image yet) | #6 (Postman CRUD) |
+| 1 — Backend listing CRUD | T5–T16 | DB tables, entities, services, 6 endpoints (no image yet) | #6 (Postman CRUD) |
 | 2 — Image upload + rate limits | T17–T21 | Multipart, validation chain, file serving, RL on listing endpoints | #7 (real image + 429 on 21st create) |
 | 3 — Backend integration tests + journal | T22–T24 | 18-test suite, decision log D-38.. | #8 (60+ green tests) |
 | 4 — Frontend infrastructure + shared components | T25–T32 | Test stack, apiClient extension, 8 shared components, 2 hooks | — |
@@ -1016,11 +1016,73 @@ remove(User currentUser, Long id):
 - [ ] **Step 5: Run full suite** (90 + 8 = 98 expected)
 - [ ] **Step 6: Journal D-51** (idempotent-DELETE design + Phase 1 service-layer retrospective)
 - [ ] **Step 7: Commit**
-### Task T16 — `ListingController` 5 endpoints (no image yet) + Security config update
+### Task T16 — `ListingController` 6 endpoints (no image yet) + 3 sanity integration tests
+
+> **Endpoint count corrected to 6**: spec §4.1–§4.6 list `POST` / `GET /me` / `GET /{id}` / `PUT` / `PATCH /status` / `DELETE`. Plan was mis-numbered as 5 from inception.
+
+> **Security config note:** Spec §7.7 prescribes a SecurityConfig update, but Epic 1's existing rule `.requestMatchers("/api/**").authenticated()` already covers `/api/listings/**`. No change required here.
+
+> **Phase boundary**: T16 ships JSON request bodies only. T19 upgrades POST/PUT to multipart. `imagePath` is hardcoded to `"listings/placeholder.jpg"` for create; `newImagePath` is `null` for update (preserves the existing path).
+
+**Files:**
+- Create: `backend/src/main/java/nz/ac/waikato/campusmarketplace/controller/ListingController.java`
+- Create: `backend/src/test/java/nz/ac/waikato/campusmarketplace/controller/ListingControllerIntegrationTest.java`
+
+- [ ] **Step 1: Create `ListingController` with 6 endpoints**
+
+| HTTP | Path | Method | Notes |
+|---|---|---|---|
+| POST | `/api/listings` | `create` | `@RequestBody @Valid CreateListingRequest`; placeholder imagePath; 201 Created |
+| GET | `/api/listings/me` | `listMine` | query params: page=0, status?, sort=CREATED_DESC, includeRemoved=false; pageSize fixed at 12 |
+| GET | `/api/listings/{id}` | `getOne` | 200 OK |
+| PUT | `/api/listings/{id}` | `update` | `@RequestBody @Valid UpdateListingRequest`; newImagePath=null; 200 OK |
+| PATCH | `/api/listings/{id}/status` | `changeStatus` | `@RequestBody @Valid ChangeStatusRequest`; 200 OK |
+| DELETE | `/api/listings/{id}` | `remove` | 204 No Content |
+
+Inject `ListingService` and `UserRepository`. Use `users.getReferenceById(principal.userId())` to materialize the User reference without an extra DB roundtrip. `mapSort(String)` switch maps `CREATED_DESC / CREATED_ASC / PRICE_DESC / PRICE_ASC` to Spring `Sort`.
+
+- [ ] **Step 2: Write `ListingControllerIntegrationTest` with 3 sanity cases**
+
+Extends `AbstractIntegrationTest`. Uses register/login helpers same shape as `AuthControllerIntegrationTest`.
+
+1. `createAndListMineRoundTrip` — register + login → POST listing → GET /me sees the new listing with correct fields.
+2. `nonOwnerGetOneReturnsNotFound` — owner creates listing, stranger tries GET → 404 `LISTING_NOT_FOUND`.
+3. `deleteIsIdempotent` — owner DELETE a listing → 204 → DELETE again → still 204 (spec §4.6).
+
+Full coverage of all endpoints' edge cases is deferred to T22/T23 (18-test integration suite).
+
+- [ ] **Step 3: Run integration test alone**
+
+```bash
+./mvnw -Dtest=ListingControllerIntegrationTest test
+```
+Expected: 3/3 green.
+
+- [ ] **Step 4: Run full suite**
+
+```bash
+./mvnw test
+```
+Expected: 99 + 3 = 102 green.
+
+- [ ] **Step 5: Append D-53 to engineering journal**
+
+Three threads:
+- Controller wiring: AuthPrincipal → User reference via `getReferenceById` (no extra query).
+- Sort string → Sort mapping at controller boundary; service stays Pageable-only.
+- Phase 1 retrospective: 16 commits / 5 phase tasks since T5; **Demo milestone #6 unlocked**.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git commit -m "feat(backend): ListingController 6 endpoints + 3 sanity integration tests (Phase 1 complete)"
+```
+
+**Demo milestone #6 unlocks here. Hand control to the user for Postman walk-through (per `feedback_handson_demo.md`).**
 
 *All tasks above to be expanded with TDD steps, exact file paths, code blocks, run commands, and commit messages.*
 
-**Demo milestone #6:** Postman walks the 5 endpoints — create (no image yet), list, get one, change status (all 8 legal transitions per spec DC-3), delete.
+**Demo milestone #6:** Postman walks the 6 endpoints — create (no image yet), list-mine, get-one, update, change-status (all 8 legal transitions per spec DC-3), delete.
 
 ---
 
