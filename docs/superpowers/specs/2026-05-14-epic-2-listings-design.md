@@ -978,15 +978,15 @@ log.info("listing.imageServe userId={} listingId={} filename={}", ...);
 
 Sensitive content excluded: image bytes, raw email addresses (use `userId` instead).
 
-### 7.10 Epic 1 carry-over fix: `429` with `Retry-After`
+### 7.10 Epic 1 carry-over fix: `Retry-After` header + TTL-aware `RateLimitService`
 
-Epic 1's `TOO_MANY_ATTEMPTS` currently maps to HTTP `400` (the default for `ApiException`). The industry standard is `429 Too Many Requests` plus a `Retry-After` header indicating the seconds until the window resets.
+Epic 1 already wired `ErrorCode → HttpStatus` (commit `56dc479`); `TOO_MANY_ATTEMPTS` and `TOO_MANY_REGISTRATIONS` already map to `429` correctly. What is still missing — and lands in this Epic alongside the new listing rate limits — is the `Retry-After` response header that tells clients how many seconds remain before the window resets.
 
-**Fix scope** (small, lands alongside the Epic 2 rate-limit code):
-1. Extend `ErrorCode` so each entry carries an `HttpStatus` (default `BAD_REQUEST`); `TOO_MANY_ATTEMPTS` overrides to `TOO_MANY_REQUESTS`.
-2. `GlobalExceptionHandler.handleApiException` reads the override and sets the response status accordingly.
-3. `ApiException(TOO_MANY_ATTEMPTS, ...)` accepts an optional `retryAfterSeconds` payload; the handler emits `Retry-After: <seconds>`.
-4. `RateLimitService.exceeded()` returns the remaining TTL alongside the boolean so callers can populate `retryAfterSeconds`.
+**Fix scope**:
+1. `ApiException` accepts an optional `retryAfterSeconds` field (default `null`).
+2. `GlobalExceptionHandler.handleApi` reads `retryAfterSeconds` and emits `Retry-After: <seconds>` when present.
+3. `RateLimitService.exceeded()` returns the remaining TTL alongside the boolean (or a small record `RateLimitDecision(boolean exceeded, long retryAfterSeconds)`), so callers can populate `retryAfterSeconds` when throwing.
+4. New `RateLimitService.incrementBy(key, n, window)` enabling byte-counting limits (used by §7.8 image-bytes limiter).
 
 This brings Epic 1's existing login / register limits up to spec **and** wires the same plumbing for the new Epic 2 limits — done once for both.
 

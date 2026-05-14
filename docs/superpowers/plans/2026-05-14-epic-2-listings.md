@@ -30,31 +30,33 @@ The plan is organised into 6 phases with 44 tasks total. Each phase ends at a de
 
 ## Phase 0 — Infrastructure + Epic 1 fixes
 
-### Task T1 — `ErrorCode → HttpStatus` mapping mechanism
+> **Reality check**: Epic 1 already wired `ErrorCode → HttpStatus` mapping (commit `56dc479`). `TOO_MANY_ATTEMPTS` already returns 429. What is missing is the `Retry-After` header, the TTL-aware `RateLimitService.exceeded()` return, and the new `incrementBy` helper. Phase 0 fixes those three gaps and adds the verification test.
 
-Extend the `ErrorCode` enum so every error code can carry a non-default HTTP status; teach `GlobalExceptionHandler` to honour the override; map `TOO_MANY_ATTEMPTS` to `429 Too Many Requests`.
+### Task T1 — `ApiException` carries `retryAfterSeconds`; handler emits `Retry-After`
 
-*Detailed steps to be expanded.*
-
-### Task T2 — `ApiException` carries `retryAfterSeconds`; handler emits `Retry-After`
-
-Add an optional `retryAfterSeconds` field to `ApiException`; `GlobalExceptionHandler` writes the `Retry-After` response header when present.
+Add an optional `retryAfterSeconds` field to `ApiException`; `GlobalExceptionHandler.handleApi` writes the `Retry-After` response header when present.
 
 *Detailed steps to be expanded.*
 
-### Task T3 — `RateLimitService.exceeded()` returns TTL; new `incrementBy(key, n, ttl)`
+### Task T2 — `RateLimitService.exceeded()` returns `RateLimitDecision`; new `incrementBy(key, n, ttl)`
 
-Return the remaining window TTL alongside the boolean so callers can populate `Retry-After`. Add `incrementBy` for byte-counting limits.
-
-*Detailed steps to be expanded.*
-
-### Task T4 — Carry-over test: login rate limit returns 429 + Retry-After
-
-Add integration tests asserting the new behaviour on the existing `/api/auth/login` flow.
+Replace the boolean return of `exceeded()` with a small record carrying both the boolean and the remaining TTL. Add `incrementBy` for byte-counting limits.
 
 *Detailed steps to be expanded.*
 
-**Demo milestone #5:** Postman — six wrong logins; the sixth response is `429 Too Many Requests` with `Retry-After: 900`.
+### Task T3 — Update `AuthService` register / login to throw with `retryAfterSeconds`
+
+With T1 + T2 in place, the existing two rate-limit call sites in `AuthService` populate `retryAfterSeconds` so login / register responses now include `Retry-After`.
+
+*Detailed steps to be expanded.*
+
+### Task T4 — Integration test: login rate-limit returns 429 + `Retry-After` header
+
+New integration test asserting both the status code (already correct) and the response header (new).
+
+*Detailed steps to be expanded.*
+
+**Demo milestone #5:** Postman — six wrong logins; the sixth response is `429 Too Many Requests` with `Retry-After: 900` (or remaining seconds).
 
 ---
 
