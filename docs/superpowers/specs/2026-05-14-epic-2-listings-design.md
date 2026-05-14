@@ -576,8 +576,262 @@ Implementations:
 
 ---
 
-## (Sections 6–8 to be added incrementally as the design discussion progresses.)
+## 6. Frontend Pages
 
-- §6 Frontend Pages — My Listings / Create / Edit 页面 + 路由 + 表单 / 状态切换 UI
+Epic 2 introduces **4 new pages and 8 shared components** in the frontend. All UI uses the toolchain already running from Epic 1 (React Router, Tailwind v4, `apiClient`, `AuthContext`). Polish is treated as part of the deliverable: every page handles loading / error / empty states, supports keyboard navigation, and uses optimistic UI for status changes.
+
+### 6.1 Routes
+
+| Path | Component | Guard | Purpose |
+|---|---|---|---|
+| `/listings/new` | `CreateListingPage` | `ProtectedRoute` | Create a new listing |
+| `/listings/mine` | `MyListingsPage` | `ProtectedRoute` | List + filter + paginate + quick actions |
+| `/listings/:id` | `ListingDetailPage` | `ProtectedRoute` | Owner read-only detail view (also the prototype reused by Epic 3 public browsing) |
+| `/listings/:id/edit` | `EditListingPage` | `ProtectedRoute` + owner guard | Edit form |
+
+Detail and Edit are intentionally separate pages, not a single page with a mode toggle. Modern SPA practice (GitHub, Linear, Notion, Stripe Dashboard) keeps URL = state so refresh / share / back-button all return to a precise view; mode toggles do not survive a refresh.
+
+### 6.2 New components
+
+```
+frontend/src/
+├── components/
+│   ├── ListingForm.tsx         — controlled form shared by Create / Edit / read-only detail
+│   ├── ListingCard.tsx         — list card (image, title, price, badge, quick actions)
+│   ├── StatusBadge.tsx         — four colors for the four statuses, with ARIA labels
+│   ├── ImagePicker.tsx         — file input + preview + client-side validation (5 MB / MIME)
+│   ├── ConfirmDialog.tsx       — second-confirm modal for destructive actions
+│   ├── EmptyState.tsx          — illustration + CTA for empty pages
+│   ├── Pagination.tsx          — prev / next + current/total page indicator
+│   └── Spinner.tsx             — loading indicator (also used for skeleton fallbacks)
+├── api/
+│   └── listings.ts             — endpoint wrappers, TS types, client-side validation helpers
+├── hooks/
+│   ├── useListings.ts          — fetch / cache / refresh wrapper around listMine
+│   └── useOptimisticStatus.ts  — optimistic status changes with rollback on failure
+└── pages/
+    ├── CreateListingPage.tsx
+    ├── MyListingsPage.tsx
+    ├── ListingDetailPage.tsx
+    └── EditListingPage.tsx
+```
+
+`ListingForm` is shared because the Create form, the Edit form, and the read-only Detail view differ only by mode flags; field changes happen in one place.
+
+### 6.3 `frontend/src/api/listings.ts`
+
+```typescript
+export type ListingStatus = 'AVAILABLE' | 'RESERVED' | 'SOLD' | 'REMOVED';
+export type ListingType = 'SELL' | 'GIVEAWAY';
+export type Condition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
+
+export interface Category { code: string; nameEn: string; nameZh: string; }
+
+export interface ListingSummary {
+  id: number;
+  title: string;
+  price: number | null;
+  imageUrl: string;
+  status: ListingStatus;
+  listingType: ListingType;
+  category: Category;
+  createdAt: string;
+}
+
+export interface Listing extends ListingSummary {
+  ownerId: number;
+  description: string;
+  originalPrice: number | null;
+  condition: Condition | null;
+  meetAt: string | null;
+  negotiable: boolean;
+  reasonForSelling: string | null;
+  updatedAt: string;
+}
+
+export interface PagedListings {
+  items: ListingSummary[];
+  page: number;        // 0-indexed
+  pageSize: number;    // server-fixed at 12
+  totalPages: number;
+  totalItems: number;
+}
+
+export interface MyListingsQuery {
+  page?: number;
+  status?: ListingStatus | 'ALL';
+  sort?: 'CREATED_DESC' | 'CREATED_ASC' | 'PRICE_DESC' | 'PRICE_ASC';
+  includeRemoved?: boolean;
+}
+
+export const listingsApi = {
+  create: (form: FormData) => apiClient.postForm<Listing>('/api/listings', form),
+  listMine: (q: MyListingsQuery) => {
+    const params = new URLSearchParams();
+    if (q.page != null) params.set('page', String(q.page));
+    if (q.status && q.status !== 'ALL') params.set('status', q.status);
+    if (q.sort) params.set('sort', q.sort);
+    if (q.includeRemoved) params.set('includeRemoved', 'true');
+    return apiClient.get<PagedListings>(`/api/listings/me?${params}`);
+  },
+  getOne: (id: number) => apiClient.get<Listing>(`/api/listings/${id}`),
+  update: (id: number, form: FormData) => apiClient.putForm<Listing>(`/api/listings/${id}`, form),
+  changeStatus: (id: number, newStatus: ListingStatus) =>
+    apiClient.patch<Listing>(`/api/listings/${id}/status`, { newStatus }),
+  remove: (id: number) => apiClient.delete<void>(`/api/listings/${id}`),
+};
+
+export const categoriesApi = {
+  list: () => apiClient.get<{ items: Category[] }>('/api/categories'),
+};
+
+// Client-side validation helpers
+export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+export function validateImageClientSide(file: File): string | null {
+  if (file.size > MAX_IMAGE_BYTES) return 'Image must be under 5 MB.';
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type as typeof ALLOWED_IMAGE_TYPES[number]))
+    return 'Image must be JPEG, PNG, or WebP.';
+  return null;
+}
+```
+
+> This raises §4.2 `GET /api/listings/me` to support `page`, `status`, and `sort` query parameters. The backend implementation lands in this Epic too — the service uses Spring Data's `Pageable`.
+
+### 6.4 `MyListingsPage`
+
+**Layout** (top to bottom):
+1. **Header bar** — title "My Listings" on the left, primary "+ New Listing" button on the right.
+2. **Filter toolbar** — status filter (`All / Available / Reserved / Sold / Removed`), sort dropdown, "Show removed" toggle.
+3. **Content area** — depends on the query state:
+   - **Loading**: four `ListingCard` skeleton placeholders (preferred over a spinning loader for perceived performance).
+   - **Error**: error icon + message + "Try again" button.
+   - **Empty (first time)**: illustration + "You haven't posted anything yet — start by creating one!" + CTA to Create.
+   - **Empty (filter result)**: "No listings match the current filter." + "Clear filters" button.
+   - **Items**: responsive grid 1/2/3/4 columns (mobile / tablet / desktop / wide).
+4. **Pagination** — 12 per page; previous / current-of-total / next.
+
+**Quick actions on each card** (ordered by importance):
+
+| Current status | Buttons |
+|---|---|
+| `AVAILABLE` | "Mark Reserved" / "Mark Sold" / "Edit" / "Remove" (red outline) |
+| `RESERVED`  | "Back to Available" / "Mark Sold" / "Edit" / "Remove" |
+| `SOLD`      | "Back to Available" / "Edit" / "Remove" |
+| `REMOVED`   | Card dimmed / translucent; only "View" is enabled |
+
+**Optimistic update** (key UX):
+- On click of a status button, the badge flips to the new status **immediately** while the PATCH request is in flight.
+- Success → silent.
+- Failure → rollback the badge + toast the error.
+
+**Keyboard accessibility**:
+- Card uses `role="article"`, title is `<h3>`.
+- Status badge has `aria-label="Status: Available"`.
+- Tab order on action buttons follows visual order.
+- `ConfirmDialog` autofocuses "Cancel" to reduce accidental destructive clicks.
+
+Clicking "Remove" opens `<ConfirmDialog>` ("This will hide the listing permanently. Continue?"); only confirmation issues the DELETE.
+
+### 6.5 `CreateListingPage`
+
+**Structure**: a single full-width card hosting `<ListingForm mode="create" />`.
+
+**Field order** (organised around the seller's mental flow):
+1. Listing Type — radio (`SELL` / `GIVEAWAY`). Toggles whether the price field is required.
+2. Category — dropdown (`categoriesApi.list()`).
+3. Title + Description — text input + textarea.
+4. Price + Original Price — number inputs (greyed out when `GIVEAWAY`).
+5. Condition — radio chip group.
+6. Meet-at — text.
+7. Negotiable — checkbox.
+8. Reason for selling — text.
+9. Image — `<ImagePicker>` with client-side validation and thumbnail preview.
+
+**Submit flow**:
+1. Click Submit → run all client-side validators → on any failure, show field-level errors and focus the first invalid field.
+2. All pass → button becomes a Spinner and is disabled → call `listingsApi.create(formData)`.
+3. Success → toast "Listing created" → navigate to `/listings/mine` with the new entry first.
+4. Failure → dispatch by `ApiError.code` to either field-level error or top banner.
+
+**Unsaved-changes guard**: when the form is dirty (any field has been modified), `useBlocker` from React Router intercepts route changes and shows a `ConfirmDialog` ("You have unsaved changes. Leave anyway?").
+
+### 6.6 `ListingDetailPage` (owner read-only view)
+
+**Why this page**: the demo and thesis benefit from a final-state view of a listing where every field is shown alongside a large image, rather than buried in an edit form. It is also the visual prototype that Epic 3 will reuse for public browsing.
+
+**Layout**:
+- Left column: large image (clickable for a lightbox); thumbnail row reserved for a future multi-image V2.
+- Right column: title (`<h1>`), price, status badge, category chip, posted-at timestamp.
+  - "Edit" primary button + "Delete" outline button (owner only).
+  - Detail blocks: description / meet-at / negotiable / condition / original price / reason for selling.
+  - Top of column: status-change toolbar mirroring §6.4's quick actions.
+
+**Loading / Error / Not-found states**:
+- Loading: full-page skeleton.
+- Error: error page + back button.
+- Not Found (404): "This listing doesn't exist or has been removed." + back to My Listings.
+
+### 6.7 `EditListingPage`
+
+**Initialisation**:
+1. On mount, call `listingsApi.getOne(id)`.
+2. If the response is `LISTING_NOT_FOUND` (which also covers "non-owner hidden"), navigate to `/listings/mine` with a toast.
+3. If `status === 'REMOVED'`, render a read-only view with "This listing has been removed and cannot be edited."
+4. Otherwise, prefill `<ListingForm mode="edit" initial={listing} />`.
+
+**Differences from Create**:
+- Submit button is "Save changes".
+- Image is **optional**: a "Current image" thumbnail is shown alongside a "Replace" button.
+- Top of the page hosts the status-change toolbar plus a "Delete" button (logic mirrors §6.4).
+- Same unsaved-changes guard as §6.5.
+
+### 6.8 Integration with Epic 1
+
+| Epic 1 piece | Epic 2 reuse / extension |
+|---|---|
+| `apiClient` | Add `postForm` / `putForm` for multipart |
+| `AuthContext` / `useAuth` | Source `user.id` for client-side owner pre-checks (server is the source of truth) |
+| `Navbar` | Add a "My Listings" link, visible only when authenticated |
+| `ProtectedRoute` | Wraps all four new routes; redirects unauthenticated users to `/login?next=...` |
+| `ApiError` + `code` switching | Reused unchanged; the eight new error codes drop into the existing try/catch fabric |
+| `PasswordInput` extraction pattern | Same approach for `ImagePicker`, `StatusBadge`, `ConfirmDialog` |
+| Register / Login form aesthetics | Reuse the same field-error styling and loading-button treatment |
+
+### 6.9 Visuals and accessibility
+
+- Tailwind v4 default palette; **no** custom theme colors.
+- Status badge colors:
+  - `AVAILABLE` → `bg-emerald-100 text-emerald-700`
+  - `RESERVED` → `bg-amber-100 text-amber-700`
+  - `SOLD` → `bg-sky-100 text-sky-700`
+  - `REMOVED` → `bg-gray-200 text-gray-600`
+- `ListingCard` images use `aspect-ratio: 4/3` + `object-cover` to keep card heights stable.
+- Every interactive element ≥ 44 × 44 px touch target (mobile-friendly).
+- Color contrast meets WCAG AA (Tailwind defaults broadly comply).
+- Every image carries an `alt` of the listing title; decorative icons use `aria-hidden="true"`.
+- Form `<label>` uses strict `htmlFor` ↔ `id` pairing.
+- Error messages use `role="alert"` + `aria-live="polite"`.
+
+### 6.10 Centralised copy (i18n preparation)
+
+A new `frontend/src/i18n/listings.ts` keeps user-visible strings in one place:
+
+```typescript
+export const t = {
+  myListings: { en: 'My Listings', zh: '我的发布' },
+  newListing:  { en: '+ New Listing', zh: '+ 新建' },
+  emptyTitle:  { en: "You haven't posted anything yet", zh: '你还没发过任何商品' },
+  // ...
+};
+```
+
+V1 reads `t.xxx.en` only. The structure is intentionally library-free — `react-i18next` and friends add bundle weight that the MVP does not need. When V2 introduces locale switching, the call sites are already routing through `t`, so the change is mechanical.
+
+---
+
+## (Sections 7–8 to be added incrementally as the design discussion progresses.)
+
 - §7 Security & Permissions — owner-only 校验位置、错误码、防 IDOR
 - §8 Testing Strategy — 单元 / 组件 / 集成 三层测试边界
