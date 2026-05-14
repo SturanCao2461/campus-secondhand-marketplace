@@ -6,8 +6,13 @@ Monorepo skeleton, frontend bootstrap, backend bootstrap, Docker infra, health c
 ## Milestone 2
 User model, auth basics, campus email restriction
 
-## Milestone 3
+## Milestone 3 ✅
 Listing CRUD and status management
+- Completed: 2026-05-15
+- Backend: 6 endpoints, FSM (4 states / 8 transitions), image upload with 5-step validation, rate limiting
+- Frontend: 4 pages (Create / MyListings / Detail / Edit), full status management UI
+- Tests: 128 backend (unit + integration) + 3 Playwright E2E specs
+- Journal: D-40..D-56 (17 decision entries)
 
 ## Milestone 4
 Browse, search, filter, detail page
