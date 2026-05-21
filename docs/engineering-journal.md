@@ -1218,4 +1218,25 @@ All tests use real multipart requests with a 1×1 JPEG generated in-memory. The 
 
 ---
 
-*Last updated: 2026-05-22 — Milestone 6 Phase A (testing) + Phase B (UI polish) complete. 22/22 E2E green, 8 files unified to blue-600 design system, MePage + ErrorBoundary + Spinner shipped. 65 → 67 decisions logged.*
+### D-68 — JaCoCo coverage baseline: 87% instruction / 76% line / 62% branch across 157 tests
+
+**Date / where** Milestone 6 stage II, 2026-05-22
+**Symptom** "157 tests" is a cardinality, not a quality signal — a thesis defender or collaborator looking at the project has no way to tell whether those tests cover the whole service layer or just `HealthController`. Without a coverage number, claims like "well tested" cannot be cross-checked.
+**Fix** Added `jacoco-maven-plugin 0.8.12` to `backend/pom.xml` with two executions wired to the existing test phase:
+- `prepare-agent` — boots the JaCoCo Java agent before Surefire runs, so every test contributes to `target/jacoco.exec`.
+- `report` — bound to the `test` phase, generates `target/site/jacoco/index.html` after each `./mvnw test` run with no extra command needed.
+The HTML report renders per-package and per-class drill-down with red/yellow/green code highlighting. Also added `backend/target/` to `.gitignore` so the binary trace and HTML output don't pollute the repo.
+**Baseline numbers** (157 tests, full suite green):
+- **Instructions: 87%** (3,746 covered / 4,294 total)
+- **Branches: 62%** (190 covered / 304 total)
+- **Lines: 76%** (649 / 849)
+- **Methods: 77%** (273 / 353)
+- **Classes: 78%** (91 / 116)
+**Pattern** Branch coverage is the lowest at 62% because controllers and exception mappers contain many short-circuit paths (rate-limit fast-path, soft-delete check, owner-vs-admin authorisation) that the happy-path tests skip. Instruction coverage of 87% is the more honest signal of "did each line get exercised once" — branches need targeted negative-path tests to climb. Future work: target conditional branches in `AuthService`, `ListingService`, and `ConversationService` (the three services with the most authorisation logic), aim for 75% branch.
+**Read it yourself** Run `./mvnw test`, then open `backend/target/site/jacoco/index.html` in a browser. The Total row at the bottom shows the same numbers; click into any package to see per-class hot/cold zones.
+
+> 💡 中文要点：把 "157 个测试" 这个数变成有质量保证的指标。加 jacoco-maven-plugin（2 个 execution：`prepare-agent` 装 Java agent + `report` 在 test 阶段生成 HTML）。基线：指令覆盖 87%、行 76%、分支 62%、方法 77%、类 78%。分支最低（62%）是因为控制器/异常映射器有很多短路路径（限流早返回、软删除判断、权限分支）只有快乐路径测试覆盖；要拉到 75%+ 需要针对 AuthService/ListingService/ConversationService 写负路径测试。运行 `./mvnw test` 后打开 `backend/target/site/jacoco/index.html` 即可逐包逐类查看红黄绿热力图。
+
+---
+
+*Last updated: 2026-05-22 — Milestone 6 Phase A + B complete, stage II in progress: LICENSE (MIT), Swagger UI, ER + sequence diagrams, JaCoCo baseline 87% instruction / 76% line. 65 → 68 decisions logged.*

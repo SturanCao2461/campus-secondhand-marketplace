@@ -7,7 +7,7 @@ Built as a thesis project to explore how a small, opinionated stack — Spring B
 | | |
 |---|---|
 | **Status** | Milestones 1–5 complete · Milestone 6 (polish) in progress |
-| **Backend tests** | 157 unit + integration (JUnit 5, Mockito, Testcontainers) |
+| **Backend tests** | 157 unit + integration (JUnit 5, Mockito, Testcontainers) — **87% instruction / 76% line coverage** (JaCoCo) |
 | **Frontend tests** | 14 unit (Vitest) + 22 E2E (Playwright) |
 | **Engineering log** | 65 numbered decisions in `docs/engineering-journal.md` |
 | **License** | MIT — see [`LICENSE`](LICENSE) |
@@ -131,6 +131,10 @@ cd infra && docker compose down
 ```bash
 # Backend (Maven, JUnit 5, Testcontainers spins MySQL on demand)
 cd backend && ./mvnw test
+
+# Backend coverage report (JaCoCo runs as part of the test phase)
+# After ./mvnw test, open backend/target/site/jacoco/index.html
+# Current baseline: 87% instruction / 76% line / 62% branch coverage
 
 # Frontend unit tests (Vitest, jsdom)
 cd frontend && npm run test
