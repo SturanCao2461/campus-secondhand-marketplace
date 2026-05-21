@@ -1292,4 +1292,68 @@ The HTML report renders per-package and per-class drill-down with red/yellow/gre
 
 ---
 
-*Last updated: 2026-05-22 — Milestone 6 stage III complete: GitHub Actions CI (backend + frontend), Prettier + .editorconfig, +5 frontend test suites (14 → 37). Stage IV (feature add-ons) next. 68 → 71 decisions logged.*
+### D-72 — Frontend test runner: chose Vitest over Jest, with `vitest/config` triple-slash directive trick
+
+**Date / where** Milestone 6 stage I, 2026-05-22 (commit `76931e6`)
+**Symptom** Frontend had zero unit tests after Epic 5 shipped. Need a test runner. Two real options for a Vite project: Jest (industry default, but heavy config for ESM + TS + JSX) or Vitest (built on Vite, native ESM/TS, share `vite.config.ts`).
+**Decision** Vitest, for three concrete reasons:
+1. **Zero config duplication.** Vitest reads the same `vite.config.ts` as the dev server. Jest needs `babel.config.js` or `ts-jest` plus `jest.config.js` plus an ESM preset.
+2. **TypeScript native.** No transformer; uses Vite's esbuild pipeline. Jest still needs `ts-jest` or `@swc/jest`.
+3. **Compatible matcher API.** `describe / it / expect / vi` mirror Jest, so existing Jest knowledge transfers.
+**Setup**
+```bash
+npm i -D vitest jsdom @testing-library/react @testing-library/jest-dom @vitest/coverage-v8
+```
+Then in `vite.config.ts` added a `test` block (env `jsdom`, globals true, `include: src/**/*.test.{ts,tsx}`, `exclude: e2e/**`).
+**The `vitest/config` triple-slash directive trick** Adding the `test` key to `defineConfig` makes TS complain that `'test' does not exist in type UserConfig`. The fix is the directive that **must** sit at the top of `vite.config.ts`:
+```ts
+/// <reference types="vitest/config" />
+```
+This widens `defineConfig`'s type to include the test block. The first attempt used `/// <reference types="vitest" />` which compiled but didn't widen the type — symptom was `Property 'test' does not exist on type 'UserConfig'`. Fixed in commit `ab15b61` long after, but the trap is worth remembering.
+**Initial coverage** Two test files at adoption: `apiClient.test.ts` (6) and `useUnreadCount.test.ts` (8). Mocking strategy: `vi.mock('../api/conversations')` for hook tests; `globalThis.fetch = vi.fn()` for the API client. Both fast (<200ms total).
+**Lesson** Use the runner native to your bundler. The friction of dual-config drift across Jest + Vite would have eaten more time than the marginal industry-default value. Triple-slash directive is a TS quirk — one searchable phrase ("vitest/config reference type") solves it; without it you waste 15 minutes wondering why the types are wrong.
+
+> 💡 中文要点：前端测试用 Vitest 不用 Jest——三个理由：与 vite.config.ts 共享配置零重复、TypeScript 原生支持、API 跟 Jest 一致迁移成本零。一个隐蔽坑：`vite.config.ts` 顶部必须写 `/// <reference types="vitest/config" />` 才能让 TS 识别 `test` 块；写成 `<reference types="vitest" />` 编译过但类型不扩展，会报 `Property 'test' does not exist on type 'UserConfig'`。教训：用与你 bundler 同源的 test runner，少配置漂移。
+
+---
+
+### D-73 — springdoc-openapi 2.6.0 → 2.8.0: Spring Framework 6.2 deleted ControllerAdviceBean(Object) constructor
+
+**Date / where** Milestone 6 stage II, 2026-05-22 (commit `fa3e256`)
+**Symptom** Added `springdoc-openapi-starter-webmvc-ui:2.6.0`, configured `OpenApiConfig` with project metadata and a cookie-auth scheme, started the backend, hit `GET /v3/api-docs`. Got HTTP 500. Backend logs:
+```
+java.lang.NoSuchMethodError: 'void
+org.springframework.web.method.ControllerAdviceBean.<init>(java.lang.Object)'
+  at org.springdoc.core.providers.SpringDocProviders...
+```
+`/swagger-ui/index.html` returned HTTP 200 (static HTML loaded) but the schema endpoint backing it was broken, so the UI loaded with no operations.
+**Root cause** Spring Boot 3.4.4 ships with **Spring Framework 6.2**, which **removed** the public `ControllerAdviceBean(Object)` constructor (kept only `(String beanName, BeanFactory, ControllerAdvice)`). springdoc 2.6.0 was compiled against the old constructor and calls it via direct `new ControllerAdviceBean(advice)`. Reflection found no method matching the old signature → `NoSuchMethodError` at runtime, not compile time, because the change is binary-incompatible but source-level invisible until invoked.
+**Fix** Bump to `springdoc-openapi-starter-webmvc-ui:2.8.0` (one-line `pom.xml` change). Verified: 18 endpoints + 18 schemas auto-discovered, all 157 backend tests still green, `/v3/api-docs` returns OpenAPI 3.1.0 JSON.
+**Pattern** When picking a Spring ecosystem dependency, **check its compatibility matrix against the Spring Boot major.minor you're on**, not just "latest stable." springdoc maintains the matrix in their docs:
+- 2.6.x → Spring Boot 3.3.x
+- 2.7.x → Spring Boot 3.3.x / 3.4.x (early)
+- 2.8.x → Spring Boot 3.4.x ✅
+The "latest version" trap is real: I picked 2.6.0 because it appeared in old StackOverflow answers as "stable for Spring Boot 3.x." That was true a year ago. Always cross-reference release notes against your runtime version. Rule of thumb: **runtime errors in the Spring ecosystem that mention `NoSuchMethod` are almost always a Spring Framework / Boot version mismatch, not a bug**.
+
+> 💡 中文要点：加 springdoc-openapi 时踩了版本不匹配坑。2.6.0 调用 `ControllerAdviceBean(Object)` 构造器，但 Spring Framework 6.2（随 Spring Boot 3.4 引入）已删除该构造器，改成 `(String, BeanFactory, ControllerAdvice)`。运行时（不是编译期）报 `NoSuchMethodError`。修法：`pom.xml` 一行升级到 2.8.0（这版才支持 Spring Boot 3.4.x）。教训：选 Spring 生态依赖永远先查它的兼容矩阵对应你的 Spring Boot major.minor，不是查"latest stable"。Spring 生态里运行时 `NoSuchMethod` 几乎都是 Spring Framework/Boot 版本不匹配，不是 bug。
+
+---
+
+### D-74 — `architecture.md`: capture the design decisions Swagger and entity classes can't (Redis-vs-MySQL, polling-vs-WebSocket)
+
+**Date / where** Milestone 6 stage II, 2026-05-22 (commit `20e5fb5`)
+**Symptom** Swagger documents the API surface; JPA entity classes document the schema. Neither captures the **design decisions** that shaped the system: why is the password reset token in Redis and not MySQL? Why does messaging poll every 5s instead of using WebSocket? Without an architecture document, these decisions live only in commit history and the engineering journal — readable for the author, opaque for an outsider.
+**Fix** Created `docs/architecture.md` with three sections:
+1. **ER diagram** (Mermaid) for all 5 tables. Field types, FK constraints, soft-delete columns, composite indexes. Inline notes:
+   - **Why no `password_reset_tokens` table?** Tokens are short-lived (15 min TTL) and high-cardinality. Redis with native expiration beats a row that needs cleanup. (D-21)
+   - **Why no `jwt_blacklist` table?** Logout writes the token's `jti` to a Redis set with TTL = remaining JWT validity. Same reasoning. (D-15)
+2. **Auth sequence diagram** (Mermaid). Register → cookie issuance → authenticated request → blacklist check → logout. Shows the `XSS-resistant cookie` trade-off: HttpOnly defeats `localStorage` token theft, in exchange for needing CSRF mitigation (`SameSite=Lax` + ignoring form-encoded requests, see D-9).
+3. **Messaging sequence diagram** (Mermaid). `Contact seller` idempotency (`UNIQUE(listing_id, buyer_id)` is the anchor), optimistic message append, two polling loops (15s unread, 5s active chat), visibility-aware pause. Records the polling-vs-WebSocket trade-off: MVP scope, polling is trivial to test/debug/observe; WebSocket adds connection lifecycle, reconnect logic, another moving piece in the load picture.
+**Why Mermaid in Markdown** GitHub renders Mermaid natively in `.md` files since 2022. No external tool, no `.png` checked in, no separate hosting. The diagram is also diff-able (PR review can see "the buyer node moved" not "the picture changed"). Trade-off: Mermaid is less polished than draw.io / Lucid, but the source-control-native value wins for an engineering doc.
+**Lesson** A working system has three audiences for documentation: API consumers (Swagger covers it), schema users (entity classes + ER diagram), and architecture readers (the *why*). Skip any one and the system is harder to evolve — outsiders ask the same "why not X?" questions over and over. The diagrams are short (three of them, ~150 lines of Mermaid) but every line answers a question that would otherwise require reading 1000 lines of code.
+
+> 💡 中文要点：Swagger 描述 API 表面、entity 类描述 schema，但都不解释**设计决策**。新建 `docs/architecture.md` 三部分：(1) Mermaid ER 图（5 张表）+ 行内注释为什么 password reset token 和 JWT blacklist 在 Redis 不在 MySQL；(2) auth 时序图，标注 HttpOnly cookie 抗 XSS 但需要 CSRF 缓解的取舍；(3) messaging 时序图，记录 `UNIQUE(listing_id, buyer_id)` 作幂等锚点 + 为什么用 polling 而非 WebSocket（MVP 复杂度取舍）。Mermaid 在 GitHub 原生渲染，可 diff，比 draw.io 适合工程文档。教训：系统有三类读者——API 用户（Swagger 够）、schema 用户（entity + ER 图）、架构读者（要 why）；缺任何一类，外部人都会反复问同样的"为什么不 X"。
+
+---
+
+*Last updated: 2026-05-22 — Milestone 6 stage III complete + journal back-filled. Vitest baseline (D-72), springdoc 2.6.0→2.8.0 NoSuchMethodError war story (D-73), architecture.md design rationale (D-74). 71 → 74 decisions logged.*
