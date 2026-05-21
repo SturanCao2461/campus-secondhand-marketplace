@@ -1143,4 +1143,30 @@ All tests use real multipart requests with a 1×1 JPEG generated in-memory. The 
 
 ---
 
-*Last updated: 2026-05-21 — Epic 5 complete (D-61..D-63). 157 backend tests green; messaging module live (conversations + messages + unread count + rate limiting). Frontend: ConversationsPage, ChatPage, navbar badge, Contact seller CTA, visibility-aware polling, browser notifications.*
+## Post-Epic-5 Polish
+
+### D-64 — `getDetail` JOIN FETCH owner to prevent LazyInitializationException on public detail page
+
+**Date / where** Post-Epic-5 polish, 2026-05-21
+**Symptom** The public listing detail page (`GET /api/listings/{id}/detail`) intermittently returned a 500 with `LazyInitializationException: could not initialize proxy [User#N] - no Session`. The error appeared when the response serializer tried to read `listing.getOwner().getNickname()` to populate `ListingResponse.ownerNickname`.
+**Root cause** `ListingService.getDetail` used `listings.findById(id)` which loads the `Listing` entity but leaves `@ManyToOne(fetch = LAZY) owner` as an uninitialized proxy. The method is annotated `@Transactional(readOnly = true)`, so the session is open during the method body — but `ListingResponse` construction happens inside the same method, so the proxy *should* be resolvable. The actual trigger was Spring's OpenSessionInView being disabled in test profile (`spring.jpa.open-in-view=false`), causing the session to close before serialization in integration tests. In production with OSIV enabled it worked by accident.
+**Fix** Added `ListingRepository.findByIdWithOwner(Long id)` with `@Query("SELECT l FROM Listing l JOIN FETCH l.owner WHERE l.id = :id")`. Switched `getDetail` to use it. The owner is now eagerly loaded in the same query — no proxy, no session dependency, works regardless of OSIV setting.
+**Lesson** This is the same family as D-25 (test `@Transactional` for lazy proxies) but in production code. Rule: any service method that *reads* a lazy association and *returns* a DTO built from it must either (1) use JOIN FETCH, (2) use an `@EntityGraph`, or (3) access the proxy inside an open session guaranteed by the method's own `@Transactional`. Relying on OSIV is fragile — it's a view-layer crutch that hides missing fetches until you disable it (which you should for performance). Prefer explicit JOIN FETCH: it documents the data contract in the query itself.
+
+> 💡 中文要点：公开详情页 500 错误——`getDetail` 用 `findById` 拿到 Listing 后访问 `owner`（LAZY proxy），在 OSIV 关闭的环境下 session 已关，触发 `LazyInitializationException`。修法：新增 `findByIdWithOwner` 用 `JOIN FETCH l.owner` 一次查出。教训：任何 service 方法如果要读 LAZY 关联并构建 DTO 返回，必须显式 JOIN FETCH——不要依赖 OSIV 这个"视图层拐杖"。
+
+---
+
+### D-65 — Navbar and HomePage flash wrong controls during auth bootstrap (loading state gate)
+
+**Date / where** Post-Epic-5 polish, 2026-05-21
+**Symptom** On page load (or hard refresh), the Navbar briefly showed "Log in / Sign up" buttons for ~200ms before switching to the logged-in state (nickname + logout). Similarly, the HomePage always showed "Sign Up" even for authenticated users.
+**Root cause** `useAuth()` returns `{ user, loading }`. During the initial auth check (`GET /api/auth/me`), `user` is `null` and `loading` is `true`. The Navbar rendered the `!user` branch (guest controls) without checking `loading`, causing a flash-of-incorrect-content (FOIC). The HomePage never consumed auth state at all — it unconditionally rendered the "Sign Up" CTA.
+**Fix** (1) Navbar: gate both the logged-in and logged-out sections behind `!loading` — render neither during bootstrap. (2) HomePage: import `useAuth`, show "Sell an Item" (→ `/listings/new`) when logged in, "Sign Up" when not, and nothing during loading. Both fixes use the same pattern: `{!loading && user && (...)}` / `{!loading && !user && (...)}`.
+**Pattern** This is the standard "async auth gate" pattern for SPAs. Any component that conditionally renders based on auth state must handle three states: loading (show nothing or skeleton), authenticated, unauthenticated. Checking only `user` vs `!user` always produces FOIC on cold load. Checklist for future auth-dependent UI: always destructure `loading` from `useAuth()` and gate on it.
+
+> 💡 中文要点：页面刷新时 Navbar 闪烁"Log in"再跳到"Hi, xxx"——因为 `useAuth()` 初始状态 `user=null, loading=true`，组件只判断了 `user` 没判断 `loading`。修法：三态渲染——loading 时什么都不显示，加载完再按 user 有无分支。HomePage 同理：登录后显示"Sell an Item"而非"Sign Up"。SPA 认证 UI 的标准模式：永远处理 loading / authed / guest 三个状态。
+
+---
+
+*Last updated: 2026-05-22 — Post-Epic-5 polish (D-64..D-65). Two bugfixes: backend JOIN FETCH owner in getDetail, frontend auth-loading gate in Navbar + HomePage. 157 backend tests still green.*
