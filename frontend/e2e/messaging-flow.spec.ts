@@ -88,10 +88,10 @@ test.describe('Messaging Flow', () => {
 
     // Click Contact seller
     await page.click('button:has-text("Contact seller")')
-    await page.waitForURL('/conversations/')
+    await page.waitForURL(/\/conversations\/\d+/)
 
     // Verify we landed in a chat
-    await expect(page.locator('text=Send')).toBeVisible()
+    await expect(page.locator('button:has-text("Send")')).toBeVisible()
   })
 
   test('buyer can send a message and see it in chat', async ({ page }) => {
