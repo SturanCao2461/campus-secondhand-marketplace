@@ -10,7 +10,7 @@ Built as a thesis project to explore how a small, opinionated stack — Spring B
 | **Backend tests** | 157 unit + integration (JUnit 5, Mockito, Testcontainers) |
 | **Frontend tests** | 14 unit (Vitest) + 22 E2E (Playwright) |
 | **Engineering log** | 65 numbered decisions in `docs/engineering-journal.md` |
-| **License** | TBD |
+| **License** | MIT — see [`LICENSE`](LICENSE) |
 
 ---
 
