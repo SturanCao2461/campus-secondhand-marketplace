@@ -1239,4 +1239,57 @@ The HTML report renders per-package and per-class drill-down with red/yellow/gre
 
 ---
 
-*Last updated: 2026-05-22 — Milestone 6 Phase A + B complete, stage II in progress: LICENSE (MIT), Swagger UI, ER + sequence diagrams, JaCoCo baseline 87% instruction / 76% line. 65 → 68 decisions logged.*
+### D-69 — GitHub Actions CI: parallel backend + frontend jobs, fix the one untyped @SpringBootTest that broke it
+
+**Date / where** Milestone 6 stage III, 2026-05-22
+**Symptom** No automated quality gate. The 157 backend tests, 14 frontend unit tests, and 22 Playwright E2E tests only ran when someone remembered to run them locally. A push could land a regression and stay green on `main` for days.
+**Fix** Added `.github/workflows/ci.yml` with two parallel jobs on push/PR to main:
+- `backend`: `setup-java@v4` (temurin 21) + Maven cache → `./mvnw -B test`. Testcontainers spins MySQL + Redis on demand because Docker is preinstalled on `ubuntu-latest`. Uploads JaCoCo report as a 14-day artifact and Surefire reports on failure.
+- `frontend`: `setup-node@v4` (Node 20) + npm cache → `npm ci` → `lint` → `test` (Vitest) → `build` (tsc + Vite).
+**The one breaking test** First CI run failed with `Tests run: 157, Failures: 0, Errors: 1`. The single failure: `BackendApplicationTests.contextLoads`, the Spring Boot Initializr default smoke test. It had bare `@SpringBootTest` and no profile, so it loaded ApplicationContext against the default `application.properties` — `localhost:3306` MySQL and `localhost:6379` Redis. Worked locally because the dev `docker compose` stack runs there; failed on the GitHub runner where neither service exists. Every other test extended `AbstractIntegrationTest` (which has the Testcontainers wiring + `@ActiveProfiles("test")`).
+**One-line fix** `class BackendApplicationTests extends AbstractIntegrationTest`. The smoke test now picks up the same Testcontainers-managed MySQL + Redis the rest of the suite uses. Zero business code touched.
+**E2E still NOT in CI** Playwright depends on the docker compose stack + a running backend + a running frontend dev server. Wiring all three into a CI runner is a meaningful project on its own. Listed for future work; for now E2E is run locally before pushing.
+**Pattern** The default test from `start.spring.io` is a trap — it ships with `@SpringBootTest` but no profile and no awareness of the project's test infrastructure. The fix is so small (`extends AbstractIntegrationTest`) that the right move is to either delete that default test or align it the day you wire up Testcontainers, not weeks later when CI exposes it.
+
+> 💡 中文要点：上 GitHub Actions CI——两个并行 job（backend Maven + frontend lint/unit/build）。第一次跑 backend 挂了 `BackendApplicationTests.contextLoads`：Spring Initializr 默认生成的冒烟测试只用裸 `@SpringBootTest` 没有 profile，本地连 dev docker 的 localhost:3306/6379 能通，CI runner 上没有服务直接加载失败。修法一行：`extends AbstractIntegrationTest` 复用 Testcontainers 配置。E2E 暂未入 CI（依赖 docker compose + backend + frontend dev server，单独项目）。教训：start.spring.io 默认那个测试是个坑，要么删要么从一开始就接入项目的测试基础设施，别等 CI 才发现。
+
+---
+
+### D-70 — Adopt Prettier with no-semi single-quote 100-col rules + .editorconfig at repo root
+
+**Date / where** Milestone 6 stage III, 2026-05-22
+**Symptom** ESLint already enforced rules but didn't normalise whitespace, quotes, line breaks, or trailing commas. Different sessions produced files with inconsistent quote style and bracket placement; PRs would have noisy whitespace diffs.
+**Fix** Three small config files + one one-shot reformat:
+- `.editorconfig` at repo root: `utf-8 / lf / 2-space indent` everywhere except Java/XML (4) and Makefile (tab); preserves trailing whitespace in `*.md`.
+- `frontend/.prettierrc.json`: no semi, single quotes, 100-col, `trailingComma: es5`, `arrowParens: avoid`, `endOfLine: lf`.
+- `frontend/.prettierignore`: `dist/`, `node_modules/`, `test-results/`, `playwright/`, lock files, `*.md` (markdown is its own dialect).
+- Added Prettier 3.8.3 (pinned exact) + `format` and `format:check` npm scripts.
+- Ran `npm run format` once: 22 files reformatted, 0 logic changes; lint still 0-error, 14/14 Vitest tests still green, build still 286 kB.
+**Why downgrade `react-hooks/set-state-in-effect` and `react-hooks/exhaustive-deps` to warn** New in `eslint-plugin-react-hooks` 6.x, the rule flags the standard "loading + error + fetch" pattern at the top of an effect body. The pattern is correct and ubiquitous; React docs suggest TanStack Query / SWR as alternatives but that is an architectural change beyond MVP scope. Keeping them as warn surfaces them in dev without failing CI.
+**Why `react-refresh/only-export-components` survived as error** Initially the file `src/components/Toast.tsx` exported both `ToastProvider` (component) and `useToast` (hook), which the rule disallows because it breaks Fast Refresh. Splitting them: `useToast` and `ToastContext` moved to `src/components/useToast.ts`, `Toast.tsx` only exports `ToastProvider`. Three call sites updated. The split is the right thing to do for Fast Refresh anyway.
+**Lesson** A formatter is worth adopting once enough hand-formatting drift accumulates that PRs start carrying whitespace noise. Earlier than that and it's premature; later than that and you're paying for the reformat at a moment when other things matter more. Sweet spot is "after the design is stable, before merging more contributors."
+
+> 💡 中文要点：加 Prettier + .editorconfig，统一格式化（no-semi、单引号、100 列）。新增 22 文件 reformat 一次性差异是纯空白/引号/换行，无逻辑变化，lint/unit/build 全过。同时降级 `react-hooks/set-state-in-effect`+`exhaustive-deps` 为 warn（新规则误伤标准 effect 模式），把 `react-refresh/only-export-components` 真正修了——把 `useToast` hook 从 `Toast.tsx` 拆到独立 `useToast.ts`（hook 和 component 同文件违反 Fast Refresh）。教训：格式化器在"设计稳定但合并更多贡献者前"接入最划算。
+
+---
+
+### D-71 — Frontend unit test coverage: 14 → 37 tests by adding 5 suites for core hooks/components
+
+**Date / where** Milestone 6 stage III, 2026-05-22
+**Symptom** Frontend unit coverage was thin: only `apiClient.ts` (6 tests) and `useUnreadCount.ts` (8 tests) were tested. The four other hooks (`useChatPolling`, `useUnsavedChangesGuard`, `useBrowserNotification`), the auth gate (`ProtectedRoute`), the global error UI (`ErrorBoundary`), and the toast hook (`useToast`) had zero tests despite being on every protected page or in every chat session.
+**Fix** Added 5 suites, 23 new tests, 14 → 37 total:
+- `useUnsavedChangesGuard.test.ts` (5): registers/removes `beforeunload` only when `isDirty=true`; flips on rerender; cleans up on unmount; the handler itself calls `preventDefault` and sets `returnValue`.
+- `useToast.test.tsx` (4): throws when used outside `ToastProvider`; returns the context value when wrapped; success/error helpers route to the right callback; render util correctly imported.
+- `ErrorBoundary.test.tsx` (4): renders children when no error; default fallback shows `error.message` + Try Again button when a child throws; custom fallback rendered when provided; clears error state when Try Again is clicked.
+- `ProtectedRoute.test.tsx` (4): renders children when authenticated; loading placeholder while bootstrapping; redirects to `/login` with `?next` when unauthenticated; preserves search params in `?next` (covers `/me?foo=bar` → `next=%2Fme%3Ffoo%3Dbar`).
+- `useChatPolling.test.ts` (6): no fetch when `conversationId === null`; initial fetch on mount; cursor-based incremental fetch on each 5s poll; `addOptimistic` appends + advances cursor so next poll asks `after={optimisticId}`; silently ignores polling errors; cleans up the interval on unmount.
+**Pattern** Two failure modes were nearly hit while writing these:
+1. `MemoryRouter` plus the browser global `location` are different things; the first version of `ProtectedRoute.test.tsx` read `location.search` from the JSDOM browser stub instead of react-router state. Fixed by extracting a `LoginProbe` component that reads `useLocation()`.
+2. `vi.spyOn(console, 'error').mockImplementation(() => )` (missing `{}`) is a syntax error Vitest catches at file load — easy to ship if you don't run the suite. The test runner is the safety net.
+**Lesson** Tests for hooks split cleanly by concern: `renderHook` for pure logic, `render` + a probe component when the hook drives navigation/routing. Mocking the API module via `vi.mock` keeps the tests fast (37 tests in 1.3s) and pinpoints the contract: each hook's test file documents exactly what the hook promises its callers.
+
+> 💡 中文要点：前端单测从 14 → 37（5 份新文件 / +23 测试）。覆盖 useUnsavedChangesGuard、useToast、ErrorBoundary、ProtectedRoute、useChatPolling 五个核心 hook/组件。要点：`renderHook` 测纯逻辑，`render` + 探针组件测路由相关；用 `vi.mock` mock API 模块让测试 1.3 秒跑完 37 个；过程中差点被两个坑：(1) `MemoryRouter` 的 location ≠ JSDOM 浏览器 `location`，要用 `useLocation()` 探针读取 router 状态；(2) `mockImplementation(() => )` 缺 `` 是语法错误，必须真跑一次测试套件确认（再次印证 D-66 那条"没真跑过的测试 = 反向文档"）。
+
+---
+
+*Last updated: 2026-05-22 — Milestone 6 stage III complete: GitHub Actions CI (backend + frontend), Prettier + .editorconfig, +5 frontend test suites (14 → 37). Stage IV (feature add-ons) next. 68 → 71 decisions logged.*
