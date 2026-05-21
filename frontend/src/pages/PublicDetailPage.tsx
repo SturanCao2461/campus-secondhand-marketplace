@@ -4,6 +4,7 @@ import { listingsApi, type Listing } from '../api/listings'
 import { conversationsApi } from '../api/conversations'
 import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../api/apiClient'
+import { Spinner } from '../components/Spinner'
 
 export function PublicDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -28,7 +29,7 @@ export function PublicDetailPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  if (loading) return <main className="max-w-2xl mx-auto p-6"><p>Loading...</p></main>
+  if (loading) return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
   if (error) return (
     <main className="max-w-2xl mx-auto p-6">
       <p className="text-gray-600 mb-4">{error}</p>

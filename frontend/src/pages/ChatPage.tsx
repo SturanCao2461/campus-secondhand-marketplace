@@ -4,6 +4,7 @@ import { conversationsApi, type ConversationDetail } from '../api/conversations'
 import { useAuth } from '../auth/useAuth'
 import { useChatPolling } from '../hooks/useChatPolling'
 import { useBrowserNotification } from '../hooks/useBrowserNotification'
+import { Spinner } from '../components/Spinner'
 
 export function ChatPage() {
   const { id } = useParams<{ id: string }>()
@@ -65,7 +66,7 @@ export function ChatPage() {
   }
 
   if (loadingConv || loadingMsgs) {
-    return <main className="max-w-2xl mx-auto p-6"><p>Loading...</p></main>
+    return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
   }
   if (!conv) return null
 

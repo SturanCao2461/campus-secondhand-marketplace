@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { listingsApi, type Listing, type ListingStatus } from '../api/listings'
 import { ApiError } from '../api/apiClient'
 import { useToast } from '../components/Toast'
+import { Spinner } from '../components/Spinner'
 
 export function ListingDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -50,7 +51,7 @@ export function ListingDetailPage() {
     }
   }
 
-  if (loading) return <main className="max-w-2xl mx-auto p-6"><p>Loading...</p></main>
+  if (loading) return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
   if (error) return <main className="max-w-2xl mx-auto p-6"><p className="text-red-600">{error}</p></main>
   if (!listing) return null
 

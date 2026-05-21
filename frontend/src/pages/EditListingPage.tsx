@@ -4,6 +4,7 @@ import { listingsApi, type Listing, type ListingType, type Condition } from '../
 import { categoriesApi, type Category } from '../api/categories'
 import { ApiError } from '../api/apiClient'
 import { useToast } from '../components/Toast'
+import { Spinner } from '../components/Spinner'
 
 export function EditListingPage() {
   const { id } = useParams<{ id: string }>()
@@ -75,7 +76,7 @@ export function EditListingPage() {
     }
   }
 
-  if (loading) return <main className="max-w-2xl mx-auto p-6"><p>Loading...</p></main>
+  if (loading) return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
   if (!listing) return null
   if (listing.status === 'REMOVED') {
     return (

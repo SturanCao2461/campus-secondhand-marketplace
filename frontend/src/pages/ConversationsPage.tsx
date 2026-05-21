@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { conversationsApi, type ConversationSummary } from '../api/conversations'
+import { Spinner } from '../components/Spinner'
 
 export function ConversationsPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
@@ -14,15 +15,21 @@ export function ConversationsPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <main className="max-w-2xl mx-auto p-6"><p>Loading...</p></main>
+  if (loading) return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
 
   if (conversations.length === 0) {
     return (
-      <main className="max-w-2xl mx-auto p-6 text-center">
-        <p className="text-gray-500 mb-4">No conversations yet.</p>
-        <Link to="/browse" className="text-blue-600 hover:underline">
-          Browse listings to start a conversation
-        </Link>
+      <main className="max-w-2xl mx-auto p-6">
+        <div className="text-center py-12 text-gray-500">
+          <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+          <p className="text-lg mb-2">No conversations yet</p>
+          <Link to="/browse" className="text-sm text-blue-600 hover:underline">
+            Browse listings to start a conversation
+          </Link>
+        </div>
       </main>
     )
   }
