@@ -3,7 +3,7 @@ import { useAuth } from '../auth/useAuth'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 
 export function Navbar() {
-  const { user, logout } = useAuth()
+  const { user, logout, loading } = useAuth()
   const nav = useNavigate()
   const unread = useUnreadCount(!!user)
 
@@ -20,7 +20,7 @@ export function Navbar() {
         </Link>
         <nav className="flex items-center gap-4 text-sm">
           <Link to="/browse" className="text-slate-700 hover:underline">Browse</Link>
-          {user ? (
+          {!loading && user && (
             <>
               <Link to="/conversations" className="relative text-slate-700 hover:underline">
                 Messages
@@ -39,7 +39,8 @@ export function Navbar() {
                 Log out
               </button>
             </>
-          ) : (
+          )}
+          {!loading && !user && (
             <>
               <Link to="/login" className="text-slate-700 hover:underline">Log in</Link>
               <Link

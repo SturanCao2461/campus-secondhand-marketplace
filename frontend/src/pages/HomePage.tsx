@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom'
+import { useAuth } from '../auth/useAuth'
 
 export function HomePage() {
+  const { user, loading } = useAuth()
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-16 text-center">
       <h1 className="text-4xl font-bold">Campus Secondhand Marketplace</h1>
@@ -12,10 +15,17 @@ export function HomePage() {
           className="bg-blue-600 text-white px-6 py-3 rounded-lg text-lg hover:bg-blue-700">
           Browse Listings
         </Link>
-        <Link to="/register"
-          className="border border-slate-300 px-6 py-3 rounded-lg text-lg hover:bg-slate-50">
-          Sign Up
-        </Link>
+        {!loading && (user ? (
+          <Link to="/listings/new"
+            className="border border-slate-300 px-6 py-3 rounded-lg text-lg hover:bg-slate-50">
+            Sell an Item
+          </Link>
+        ) : (
+          <Link to="/register"
+            className="border border-slate-300 px-6 py-3 rounded-lg text-lg hover:bg-slate-50">
+            Sign Up
+          </Link>
+        ))}
       </div>
     </div>
   )
