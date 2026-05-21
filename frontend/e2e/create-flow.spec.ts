@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
-import path from 'path'
+import { resetRateLimits } from './helpers/rateLimit'
+import { e2eFixture } from './helpers/paths'
 
 const uniqueEmail = () => `e2e-${Date.now()}@students.waikato.ac.nz`
 
@@ -7,6 +8,7 @@ test.describe('Listing Create Flow', () => {
   let email: string
 
   test.beforeEach(async ({ page }) => {
+    resetRateLimits()
     email = uniqueEmail()
     await page.goto('/register')
     await page.fill('input[name="email"]', email)
@@ -25,7 +27,7 @@ test.describe('Listing Create Flow', () => {
     await page.selectOption('select[name="listingType"]', 'SELL')
     await page.fill('input[name="price"]', '25.00')
 
-    const testImage = path.resolve(__dirname, 'fixtures/test-image.jpg')
+    const testImage = e2eFixture(import.meta.url, 'fixtures/test-image.jpg')
     await page.setInputFiles('input[name="image"]', testImage)
 
     await page.click('button[type="submit"]')
@@ -34,7 +36,7 @@ test.describe('Listing Create Flow', () => {
     await expect(page.locator('text=E2E Textbook')).toBeVisible()
   })
 
-  test('create listing without image shows error', async ({ page }) => {
+  test('create listing without image is blocked by HTML5 validation', async ({ page }) => {
     await page.goto('/listings/new')
     await page.fill('input[name="title"]', 'No Image')
     await page.fill('textarea[name="description"]', 'Missing image test')
@@ -44,6 +46,7 @@ test.describe('Listing Create Flow', () => {
 
     await page.click('button[type="submit"]')
 
-    await expect(page.locator('text=Please select an image')).toBeVisible()
+    // HTML5 required attribute prevents submission — URL stays on /listings/new
+    expect(page.url()).toContain('/listings/new')
   })
 })

@@ -45,6 +45,7 @@ export function RegisterPage() {
         <Field label="Email" hint="@students.waikato.ac.nz only">
           <input
             type="email"
+            name="email"
             required
             value={email}
             onChange={e => setEmail(e.target.value)}
@@ -55,6 +56,7 @@ export function RegisterPage() {
 
         <Field label="Password" hint="8-64 characters with at least one letter and one digit">
           <PasswordInput
+            name="password"
             required
             minLength={8}
             maxLength={64}
@@ -66,6 +68,7 @@ export function RegisterPage() {
 
         <Field label="Confirm Password">
           <PasswordInput
+            name="confirmPassword"
             required
             value={confirm}
             onChange={e => setConfirm(e.target.value)}
@@ -76,6 +79,7 @@ export function RegisterPage() {
         <Field label="Nickname" hint="2-20 characters, shown publicly">
           <input
             type="text"
+            name="nickname"
             required
             minLength={2}
             maxLength={20}

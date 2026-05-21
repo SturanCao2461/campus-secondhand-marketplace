@@ -56,6 +56,7 @@ export function ResetPasswordPage() {
         <label className="block text-sm">
           <span className="font-medium text-slate-700">New password</span>
           <PasswordInput
+            name="password"
             required
             minLength={8}
             maxLength={64}
@@ -71,6 +72,7 @@ export function ResetPasswordPage() {
         <label className="block text-sm">
           <span className="font-medium text-slate-700">Confirm password</span>
           <PasswordInput
+            name="confirmPassword"
             required
             value={confirm}
             onChange={e => setConfirm(e.target.value)}

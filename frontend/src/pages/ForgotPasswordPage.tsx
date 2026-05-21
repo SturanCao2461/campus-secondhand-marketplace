@@ -52,6 +52,7 @@ export function ForgotPasswordPage() {
           <span className="font-medium text-slate-700">Email</span>
           <input
             type="email"
+            name="email"
             required
             value={email}
             onChange={e => setEmail(e.target.value)}

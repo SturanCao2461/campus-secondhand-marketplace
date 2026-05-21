@@ -1,9 +1,14 @@
 import { test, expect } from '@playwright/test'
+import { resetRateLimits } from './helpers/rateLimit'
 
 const uniqueEmail = (prefix: string) =>
   `${prefix}-${Date.now()}@students.waikato.ac.nz`
 
 test.describe('Auth Flow', () => {
+  test.beforeEach(() => {
+    resetRateLimits()
+  })
+
   test('register rejects non-campus email', async ({ page }) => {
     await page.goto('/register')
     await page.fill('input[name="email"]', `bad-${Date.now()}@gmail.com`)
@@ -18,12 +23,13 @@ test.describe('Auth Flow', () => {
   test('register rejects weak password', async ({ page }) => {
     await page.goto('/register')
     await page.fill('input[name="email"]', uniqueEmail('weak'))
-    await page.fill('input[name="password"]', 'abc')
-    await page.fill('input[name="confirmPassword"]', 'abc')
+    // Use 8+ chars to bypass HTML5 minLength, but lacking digit -> backend rejects
+    await page.fill('input[name="password"]', 'abcdefgh')
+    await page.fill('input[name="confirmPassword"]', 'abcdefgh')
     await page.fill('input[name="nickname"]', `User${Date.now()}`)
     await page.click('button[type="submit"]')
 
-    await expect(page.locator('text=/Password must be/i')).toBeVisible()
+    await expect(page.locator('text=/Password must/i')).toBeVisible()
   })
 
   test('register rejects mismatched confirm password', async ({ page }) => {
@@ -133,7 +139,8 @@ test.describe('Auth Flow', () => {
   test('login from protected redirect lands on original target', async ({ page }) => {
     const ts = Date.now()
     const email = uniqueEmail(`redirect-${ts}`)
-    const nickname = `Redirect${ts}`
+    // Nickname max length 20 — Date.now() is 13 chars, so prefix max 7 chars
+    const nickname = `R${ts}`
 
     // Register first
     await page.goto('/register')

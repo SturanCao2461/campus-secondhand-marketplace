@@ -43,6 +43,7 @@ export function LoginPage() {
           <span className="font-medium text-slate-700">Email</span>
           <input
             type="email"
+            name="email"
             required
             value={email}
             onChange={e => setEmail(e.target.value)}
@@ -54,6 +55,7 @@ export function LoginPage() {
         <label className="block text-sm">
           <span className="font-medium text-slate-700">Password</span>
           <PasswordInput
+            name="password"
             required
             value={password}
             onChange={e => setPassword(e.target.value)}

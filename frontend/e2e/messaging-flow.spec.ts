@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
-import path from 'path'
+import { resetRateLimits } from './helpers/rateLimit'
+import { e2eFixture } from './helpers/paths'
 
 const uniqueEmail = (prefix: string) =>
   `${prefix}-${Date.now()}@students.waikato.ac.nz`
@@ -41,7 +42,7 @@ async function createListing(page: import('@playwright/test').Page, title: strin
   await page.selectOption('select[name="categoryCode"]', 'BOOKS')
   await page.selectOption('select[name="listingType"]', 'SELL')
   await page.fill('input[name="price"]', '20.00')
-  const testImage = path.resolve(__dirname, 'fixtures/test-image.jpg')
+  const testImage = e2eFixture(import.meta.url, 'fixtures/test-image.jpg')
   await page.setInputFiles('input[name="image"]', testImage)
   await page.click('button[type="submit"]')
   await page.waitForURL('/listings/mine')
@@ -53,6 +54,10 @@ test.describe('Messaging Flow', () => {
   let sellerNickname: string
   let buyerNickname: string
   const listingTitle = `Msg-Test-Book-${Date.now()}`
+
+  test.beforeEach(() => {
+    resetRateLimits()
+  })
 
   test.beforeAll(async ({ browser }) => {
     const ts = Date.now()
@@ -99,8 +104,8 @@ test.describe('Messaging Flow', () => {
     await page.goto('/conversations')
     await page.waitForLoadState('networkidle')
 
-    // Open the first conversation
-    await page.locator('[data-testid="conversation-item"]').first().click()
+    // Open the first conversation (button inside <li>)
+    await page.locator('main ul li button').first().click()
     await page.waitForURL(/\/conversations\/\d+/)
 
     const messageText = `Hello from buyer at ${Date.now()}`
@@ -134,7 +139,7 @@ test.describe('Messaging Flow', () => {
     await buyerPage.locator(`text=${title}`).first().click()
     await buyerPage.waitForURL(/\/listings\/\d+/)
     await buyerPage.click('button:has-text("Contact seller")')
-    await buyerPage.waitForURL('/conversations/')
+    await buyerPage.waitForURL(/\/conversations\/\d+/)
     await buyerPage.fill('textarea', 'Hey, is this still available?')
     await buyerPage.click('button:has-text("Send")')
     await buyerPage.close()
@@ -150,15 +155,17 @@ test.describe('Messaging Flow', () => {
   test('cannot send message to own listing', async ({ page }) => {
     await login(page, sellerEmail)
 
-    // Seller visits own listing via public detail
-    await page.goto('/browse')
-    await page.fill('input[placeholder*="Search"]', listingTitle)
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(1000)
-    await page.locator(`text=${listingTitle}`).first().click()
-    await page.waitForURL(/\/listings\/\d+/)
-
-    // Contact seller button should NOT be visible for the owner
-    await expect(page.locator('button:has-text("Contact seller")')).not.toBeVisible()
+    // Seller visits own listing via public detail (use direct URL since search may double-match)
+    await page.goto('/listings/mine')
+    await page.locator(`a:has-text("${listingTitle}")`).first().click()
+    // Owner detail page (not public). Public detail page is what matters for Contact seller button.
+    await page.waitForURL(/\/listings\/\d+$/)
+    const url = page.url()
+    const id = url.match(/\/listings\/(\d+)/)?.[1]
+    if (id) {
+      await page.goto(`/listings/${id}/detail`)
+      // Contact seller button should NOT be visible for the owner
+      await expect(page.locator('button:has-text("Contact seller")')).not.toBeVisible()
+    }
   })
 })

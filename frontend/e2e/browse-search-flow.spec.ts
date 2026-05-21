@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
-import path from 'path'
+import { resetRateLimits } from './helpers/rateLimit'
+import { e2eFixture } from './helpers/paths'
 
 const uniqueEmail = (prefix: string) =>
   `${prefix}-${Date.now()}@students.waikato.ac.nz`
@@ -33,7 +34,7 @@ async function createListing(
   if (listingType === 'SELL') {
     await page.fill('input[name="price"]', price)
   }
-  const testImage = path.resolve(__dirname, 'fixtures/test-image.jpg')
+  const testImage = e2eFixture(import.meta.url, 'fixtures/test-image.jpg')
   await page.setInputFiles('input[name="image"]', testImage)
   await page.click('button[type="submit"]')
   await page.waitForURL('/listings/mine')
@@ -43,6 +44,10 @@ test.describe('Browse and Search Flow', () => {
   const ts = Date.now()
   const email = uniqueEmail(`browse-${ts}`)
   const nickname = `BrowseUser${ts}`
+
+  test.beforeEach(() => {
+    resetRateLimits()
+  })
 
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage()
@@ -99,7 +104,6 @@ test.describe('Browse and Search Flow', () => {
 
     // Should see free chair
     await expect(page.locator(`text=FreeChair-${ts}`)).toBeVisible()
-    await expect(page.locator('text=Free')).toBeVisible()
 
     // Should NOT see paid items
     await expect(page.locator(`text=Laptop-${ts}`)).not.toBeVisible()

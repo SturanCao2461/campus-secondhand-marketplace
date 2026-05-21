@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
-import path from 'path'
+import { resetRateLimits } from './helpers/rateLimit'
+import { e2eFixture } from './helpers/paths'
 
 const uniqueEmail = () => `e2e-status-${Date.now()}@students.waikato.ac.nz`
 
@@ -7,6 +8,7 @@ test.describe('Listing Status Flow', () => {
   let email: string
 
   test.beforeEach(async ({ page }) => {
+    resetRateLimits()
     email = uniqueEmail()
     await page.goto('/register')
     await page.fill('input[name="email"]', email)
@@ -23,7 +25,7 @@ test.describe('Listing Status Flow', () => {
     await page.selectOption('select[name="categoryCode"]', 'ELECTRONICS')
     await page.selectOption('select[name="listingType"]', 'SELL')
     await page.fill('input[name="price"]', '50.00')
-    const testImage = path.resolve(__dirname, 'fixtures/test-image.jpg')
+    const testImage = e2eFixture(import.meta.url, 'fixtures/test-image.jpg')
     await page.setInputFiles('input[name="image"]', testImage)
     await page.click('button[type="submit"]')
     await page.waitForURL('/listings/mine')
@@ -34,20 +36,20 @@ test.describe('Listing Status Flow', () => {
     await page.waitForURL(/\/listings\/\d+/)
 
     // AVAILABLE -> RESERVED
-    await page.click('text=Mark Reserved')
-    await expect(page.locator('text=RESERVED')).toBeVisible()
+    await page.click('button:has-text("Mark Reserved")')
+    await expect(page.locator('span:has-text("RESERVED")').first()).toBeVisible()
 
     // RESERVED -> SOLD
-    await page.click('text=Mark Sold')
-    await expect(page.locator('text=SOLD')).toBeVisible()
+    await page.click('button:has-text("Mark Sold")')
+    await expect(page.locator('span:has-text("SOLD")').first()).toBeVisible()
 
     // SOLD -> AVAILABLE (relist)
-    await page.click('text=Relist')
-    await expect(page.locator('text=AVAILABLE')).toBeVisible()
+    await page.click('button:has-text("Relist")')
+    await expect(page.locator('span:has-text("AVAILABLE")').first()).toBeVisible()
 
     // AVAILABLE -> REMOVED (delete)
     page.on('dialog', dialog => dialog.accept())
-    await page.click('text=Delete')
+    await page.click('button:has-text("Delete")')
     await page.waitForURL('/listings/mine')
   })
 })
