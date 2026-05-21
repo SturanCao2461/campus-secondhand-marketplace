@@ -1170,3 +1170,52 @@ All tests use real multipart requests with a 1×1 JPEG generated in-memory. The 
 ---
 
 *Last updated: 2026-05-22 — Post-Epic-5 polish (D-64..D-65). Two bugfixes: backend JOIN FETCH owner in getDetail, frontend auth-loading gate in Navbar + HomePage. 157 backend tests still green.*
+
+---
+
+## Milestone 6 — Polish, Testing, Deployment
+
+### D-66 — Full Playwright suite green (1/8 → 22/22) by fixing four orthogonal failure modes at once
+
+**Date / where** Milestone 6 Phase A, 2026-05-22
+**Symptom** Across six E2E spec files (auth-flow, browse-search-flow, create-flow, edit-flow, messaging-flow, status-flow) the suite failed catastrophically the very first time it was run end-to-end: 1/8 auth tests passed, the rest timed out on `input[name="email"]`. Earlier runs of `create-flow` / `edit-flow` / `status-flow` had passed in isolation during Epic 2/3 development, but had drifted into rot once the suite size and shared state grew.
+**Root causes** (four independent bugs, each masking the next as it was fixed)
+1. **Missing `name` attributes on auth forms.** LoginPage / RegisterPage / ForgotPasswordPage / ResetPasswordPage used controlled-input React components with no `name=` attribute. Selectors of the form `input[name="email"]` could never match. Listing forms (`CreateListingPage`) were already FormData-based and had `name`, which is why those specs *appeared* to work.
+2. **Backend rate limiting trips after the 4th test in a file.** Registration is throttled to 3/hour per IP. The auth-flow file alone needs ~8 registrations; messaging-flow + create/edit/status add ~10 more. Every test from #4 onward failed with "Too many registrations from your network." The DOM showed the error clearly, but the timeout signature on `waitForURL('/')` looked like a selector problem.
+3. **`__dirname` is undefined in ESM specs.** The frontend's `package.json` has `"type": "module"`, so all `.spec.ts` files run as ES modules. `path.resolve(__dirname, 'fixtures/test-image.jpg')` worked under CommonJS but throws `ReferenceError: __dirname is not defined` once you actually run it.
+4. **Brittle `text=` selectors.** `text=Free` matched the `<option>Free</option>`, the giveaway label *and* the price column — Playwright strict mode (correctly) refused. Same for `text=Edit` (button + nav link), `text=AVAILABLE` (status badge + toast notification). `[data-testid="conversation-item"]` was speculative — the component had no such testid.
+**Fix**
+- Added `name="email|password|nickname|confirmPassword"` to nine controlled inputs across the four auth pages (also a quality-of-life win for password managers).
+- Created `e2e/helpers/rateLimit.ts`: `docker exec campus_redis redis-cli FLUSHDB`. Called from `beforeEach` in every spec.
+- Created `e2e/helpers/paths.ts` with `e2eFixture(import.meta.url, 'fixtures/test-image.jpg')` — ESM-safe resolution via `fileURLToPath`. Replaced all `path.resolve(__dirname, ...)` calls.
+- Tightened selectors: `button:has-text("Mark Reserved")`, `a:has-text("Edit")`, `span:has-text("AVAILABLE")`, `main ul li button` for conversation rows. Dropped the `[data-testid]` speculation.
+- Reframed the "no-image upload" test from "expect alert text" to "expect URL stays on /listings/new" — HTML5 `required` blocks submission *before* JS runs, so the alert never fires.
+- Added Playwright output to `frontend/.gitignore` (`test-results/`, `playwright-report/`, `blob-report/`, `playwright/.cache`).
+**Pattern** Tests that have never been run end-to-end are not tests — they are commented-out documentation. The suite was written across multiple sessions with each spec verified in isolation, but isolation hides three of the four failure modes above. Lesson: any time you add a new spec or move to a new test runner, run the whole suite *immediately* and fix what falls out — don't wait for "later integration." A green CI badge buys nothing if it's testing the wrong thing.
+
+> 💡 中文要点：六个 E2E spec 第一次合并跑全军覆没（1/8 通过），逐个挖出四层独立 bug：(1) Auth 表单的受控 input 缺 `name` 属性，所有 `input[name="email"]` 选择器无法命中；(2) 后端注册限流 3/h，跑到第四个测试就被拦；(3) ESM 模式下没有 `__dirname`，图片 fixture 路径解析报错；(4) `text=Free` / `text=Edit` 这种宽松选择器在 strict mode 下匹配多个元素直接失败。修复手法：补 `name`、写 Redis flush helper（`beforeEach` 清限流）、写 `e2eFixture(import.meta.url, ...)` ESM-safe 路径工具、把所有选择器收紧到 `button:has-text` / `a:has-text` / 显式 DOM 路径。最终 22/22 全绿，34 秒跑完。教训：从来没真正跑过的测试 = 反向文档。每加一个 spec 或换 test runner 就立刻跑全套，别等"以后集成时再说"。
+
+---
+
+### D-67 — UI consistency pass: unify on blue-600 / slate-300 / rounded-md / red-50 design tokens across 8 files
+
+**Date / where** Milestone 6 Phase B, 2026-05-22
+**Symptom** Walking the UI page-by-page revealed three coexisting visual languages: auth pages used `bg-slate-900` (near-black) buttons with `focus:border-slate-900`; listing CRUD pages used `bg-blue-600` buttons with raw `border rounded` inputs (no shadow, no focus colour, mismatched radius); browse/home pages used a third hybrid. Error states were equally fragmented: some pages rendered `<p className="text-red-600">`, others used `<div className="bg-red-50 ... text-red-700">`, and one (MePage) just dumped raw JSON to the screen.
+**Root cause** No design system. Each page was implemented in isolation during its own epic, with whatever Tailwind classes felt right at the time. The codebase grew faster than the eye could audit. By the end of M5, ~28 className inconsistencies were spread across 8 files.
+**Fix** Picked the blue-600 family (warmer, more "marketplace" than slate-900) and converted everything in one sweep:
+- **Buttons** → `rounded-md bg-blue-600 text-white hover:bg-blue-700` (LoginPage, RegisterPage, ForgotPasswordPage, ResetPasswordPage, Navbar Sign Up)
+- **Inputs** → `rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none` (CreateListingPage 9 fields, EditListingPage 9 fields, BrowsePage search + 3 selects + pagination, MyListingsPage pagination, PasswordInput component)
+- **Page-level errors** → `rounded-md bg-red-50 p-3 text-sm text-red-700` banner (5 pages converted from inline `<p text-red-600>`)
+- **Field-level inline hints** kept as small `text-red-600 text-xs` next to inputs (different intent: per-field validation vs. page-level failure)
+- **Links** → `text-blue-600 hover:underline` (was `text-slate-900` on auth pages)
+- **MePage** rewritten from raw JSON dump to a proper profile card (avatar circle with first-letter monogram + nickname/email + quick-action grid linking to /listings/mine /conversations /listings/new)
+- Added a global `<ErrorBoundary>` wrapping all routes — instead of a white-screen-of-death on a runtime exception, users see a "Something went wrong" panel with a Try again button.
+- Replaced bare `<p>Loading...</p>` in 5 pages with a reusable `<Spinner>` component (animated SVG + label).
+- ConversationsPage empty state upgraded from a one-line `<p>` to a centered chat-bubble icon + headline + CTA, matching BrowsePage / MyListingsPage.
+**Pattern** Design systems work best when they're *extracted* from real code, not invented up-front. By M5 the patterns had emerged organically — the unification step was just picking the best variant of each (the listings-pages input style won; the auth-pages button colour lost) and propagating it. Tailwind's class-based approach makes this trivially mechanical: one `Edit` per className substring per file. The "shared design token" only existed implicitly until D-67 — now there's a documented vocabulary in `frontend/README.md` so future pages don't drift.
+
+> 💡 中文要点：UI 走查后发现 8 个文件里有 28 处样式不一致——auth 页用 `bg-slate-900` 黑按钮、listing 页用 `bg-blue-600` 蓝按钮、错误提示一会儿是 `<p text-red-600>` 一会儿是红底框、MePage 直接 `<pre>{JSON.stringify(user)}</pre>` 显示原始数据。一次性统一为：按钮 `rounded-md bg-blue-600`、输入框 `rounded-md border-slate-300 shadow-sm focus:border-blue-600`、页面级错误 `bg-red-50 rounded-md text-red-700` 横幅、字段级小红字保留、MePage 改造成 profile card（头像圈+昵称+快捷操作）。同时加了全局 `<ErrorBoundary>` 防白屏、`<Spinner>` 替代 5 处 `<p>Loading...</p>`、ConversationsPage 空状态加图标。教训：设计系统是从真实代码里"提炼"出来的——不是事先想好的。等模式自然涌现后，用 Tailwind 的 className 做机械替换，一次收口。
+
+---
+
+*Last updated: 2026-05-22 — Milestone 6 Phase A (testing) + Phase B (UI polish) complete. 22/22 E2E green, 8 files unified to blue-600 design system, MePage + ErrorBoundary + Spinner shipped. 65 → 67 decisions logged.*
