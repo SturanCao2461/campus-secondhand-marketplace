@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { listingsApi, type Listing, type ListingStatus } from '../api/listings'
 import { ApiError } from '../api/apiClient'
-import { useToast } from '../components/Toast'
+import { useToast } from '../components/useToast'
 import { Spinner } from '../components/Spinner'
 
 export function ListingDetailPage() {

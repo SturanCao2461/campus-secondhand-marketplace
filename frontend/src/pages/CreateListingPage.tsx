@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { listingsApi, type ListingType, type Condition } from '../api/listings'
 import { categoriesApi, type Category } from '../api/categories'
 import { ApiError } from '../api/apiClient'
-import { useToast } from '../components/Toast'
+import { useToast } from '../components/useToast'
 import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard'
 
 export function CreateListingPage() {

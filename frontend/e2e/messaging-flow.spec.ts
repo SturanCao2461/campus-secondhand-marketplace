@@ -30,11 +30,6 @@ async function login(
   await page.waitForURL('/')
 }
 
-async function logout(page: import('@playwright/test').Page) {
-  await page.click('button:has-text("Log out")')
-  await page.waitForURL('/')
-}
-
 async function createListing(page: import('@playwright/test').Page, title: string) {
   await page.goto('/listings/new')
   await page.fill('input[name="title"]', title)
