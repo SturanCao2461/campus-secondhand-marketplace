@@ -52,7 +52,7 @@ export function ListingDetailPage() {
   }
 
   if (loading) return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
-  if (error) return <main className="max-w-2xl mx-auto p-6"><p className="text-red-600">{error}</p></main>
+  if (error) return <main className="max-w-2xl mx-auto p-6"><div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div></main>
   if (!listing) return null
 
   const isRemoved = listing.status === 'REMOVED'
@@ -97,7 +97,7 @@ export function ListingDetailPage() {
         <p className="text-sm text-gray-500 mb-4">Reason: {listing.reasonForSelling}</p>
       )}
 
-      {actionError && <p className="text-red-600 mb-4">{actionError}</p>}
+      {actionError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{actionError}</div>}
 
       {!isRemoved && (
         <div className="flex flex-wrap gap-2 mb-4">

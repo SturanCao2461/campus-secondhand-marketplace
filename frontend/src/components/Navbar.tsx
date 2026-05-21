@@ -45,7 +45,7 @@ export function Navbar() {
               <Link to="/login" className="text-slate-700 hover:underline">Log in</Link>
               <Link
                 to="/register"
-                className="rounded-md bg-slate-900 px-3 py-1 text-white hover:bg-slate-800"
+                className="rounded-md bg-blue-600 px-3 py-1 text-white hover:bg-blue-700"
               >
                 Sign up
               </Link>

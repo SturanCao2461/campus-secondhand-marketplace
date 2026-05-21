@@ -53,21 +53,21 @@ export function BrowsePage() {
           placeholder="Search by title..."
           defaultValue={keyword}
           onKeyDown={e => { if (e.key === 'Enter') updateParam('keyword', (e.target as HTMLInputElement).value) }}
-          className="border rounded px-3 py-2 text-sm w-48"
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none w-48"
         />
         <select value={categoryCode} onChange={e => updateParam('category', e.target.value)}
-          className="border rounded px-3 py-2 text-sm">
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none">
           <option value="">All Categories</option>
           {categories.map(c => <option key={c.code} value={c.code}>{c.nameEn}</option>)}
         </select>
         <select value={listingType} onChange={e => updateParam('type', e.target.value)}
-          className="border rounded px-3 py-2 text-sm">
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none">
           <option value="">All Types</option>
           <option value="SELL">For Sale</option>
           <option value="GIVEAWAY">Free</option>
         </select>
         <select value={sort} onChange={e => updateParam('sort', e.target.value)}
-          className="border rounded px-3 py-2 text-sm">
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none">
           <option value="CREATED_DESC">Newest</option>
           <option value="CREATED_ASC">Oldest</option>
           <option value="PRICE_ASC">Price: Low to High</option>
@@ -89,7 +89,7 @@ export function BrowsePage() {
         </div>
       )}
 
-      {error && <p className="text-red-600">{error}</p>}
+      {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{error}</div>}
 
       {!loading && !error && data && data.items.length === 0 && (
         <div className="text-center py-12 text-gray-500">
@@ -126,7 +126,7 @@ export function BrowsePage() {
             <div className="flex justify-center gap-2 mt-6">
               <button onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(page - 1)); setSearchParams(p) }}
                 disabled={page === 0}
-                className="px-3 py-1 border rounded disabled:opacity-30">
+                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30">
                 Previous
               </button>
               <span className="px-3 py-1 text-sm text-gray-600">
@@ -134,7 +134,7 @@ export function BrowsePage() {
               </span>
               <button onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(page + 1)); setSearchParams(p) }}
                 disabled={page >= data.totalPages - 1}
-                className="px-3 py-1 border rounded disabled:opacity-30">
+                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30">
                 Next
               </button>
             </div>

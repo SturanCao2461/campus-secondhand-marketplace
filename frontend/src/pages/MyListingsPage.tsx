@@ -60,7 +60,7 @@ export function MyListingsPage() {
           ))}
         </div>
       )}
-      {error && <p className="text-red-600">{error}</p>}
+      {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{error}</div>}
 
       {!loading && !error && data && data.items.length === 0 && (
         <div className="text-center py-12 text-gray-500">
@@ -104,7 +104,7 @@ export function MyListingsPage() {
             <div className="flex justify-center gap-2 mt-6">
               <button onClick={() => setPage(p => Math.max(0, p - 1))}
                 disabled={page === 0}
-                className="px-3 py-1 border rounded disabled:opacity-30">
+                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30">
                 Previous
               </button>
               <span className="px-3 py-1 text-sm text-gray-600">
@@ -112,7 +112,7 @@ export function MyListingsPage() {
               </span>
               <button onClick={() => setPage(p => p + 1)}
                 disabled={page >= data.totalPages - 1}
-                className="px-3 py-1 border rounded disabled:opacity-30">
+                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30">
                 Next
               </button>
             </div>

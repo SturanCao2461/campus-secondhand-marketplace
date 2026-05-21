@@ -21,7 +21,7 @@ export function ResetPasswordPage() {
           This reset link is missing a token. Request a new one.
         </p>
         <p className="mt-6 text-sm">
-          <Link to="/forgot-password" className="font-medium text-slate-900 hover:underline">
+          <Link to="/forgot-password" className="font-medium text-blue-600 hover:underline">
             Request a new link
           </Link>
         </p>
@@ -83,7 +83,7 @@ export function ResetPasswordPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-md bg-slate-900 py-2 text-white hover:bg-slate-800 disabled:opacity-50"
+          className="w-full rounded-md bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
         >
           {submitting ? 'Updating...' : 'Update password'}
         </button>
