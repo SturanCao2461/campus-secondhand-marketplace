@@ -7,6 +7,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
@@ -19,4 +21,7 @@ public interface ListingRepository extends JpaRepository<Listing, Long>, JpaSpec
     Page<Listing> findByOwnerAndStatusNot(User owner, ListingStatus status, Pageable pageable);
 
     Optional<Listing> findByImagePath(String imagePath);
+
+    @Query("SELECT l FROM Listing l JOIN FETCH l.owner WHERE l.id = :id")
+    Optional<Listing> findByIdWithOwner(@Param("id") Long id);
 }

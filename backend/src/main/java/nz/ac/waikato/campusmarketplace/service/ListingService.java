@@ -164,7 +164,7 @@ public class ListingService {
 
     @Transactional(readOnly = true)
     public ListingResponse getDetail(Long id) {
-        Listing listing = listings.findById(id)
+        Listing listing = listings.findByIdWithOwner(id)
                 .orElseThrow(() -> new ApiException(ErrorCode.LISTING_NOT_FOUND,
                         "Listing not found."));
         if (listing.getStatus() == ListingStatus.REMOVED) {
