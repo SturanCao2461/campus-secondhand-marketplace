@@ -46,7 +46,7 @@ export function LoginPage() {
             required
             value={email}
             onChange={e => setEmail(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-900 focus:outline-none"
+            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none"
             autoComplete="email"
           />
         </label>
@@ -66,7 +66,7 @@ export function LoginPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-md bg-slate-900 py-2 text-white hover:bg-slate-800 disabled:opacity-50"
+          className="w-full rounded-md bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
         >
           {submitting ? 'Logging in...' : 'Log in'}
         </button>
@@ -75,7 +75,7 @@ export function LoginPage() {
           <Link to="/forgot-password" className="text-slate-600 hover:underline">
             Forgot password?
           </Link>
-          <Link to="/register" className="font-medium text-slate-900 hover:underline">
+          <Link to="/register" className="font-medium text-blue-600 hover:underline">
             Create an account
           </Link>
         </div>

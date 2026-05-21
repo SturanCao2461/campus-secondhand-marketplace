@@ -73,22 +73,22 @@ export function CreateListingPage() {
   return (
     <main className="max-w-2xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Create Listing</h1>
-      {error && <p className="text-red-600 mb-4">{error}</p>}
+      {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-4" onChange={() => setDirty(true)} ref={formRef}>
         <div>
           <label className="block text-sm font-medium mb-1">Title *</label>
           <input name="title" required maxLength={80}
-            className="w-full border rounded px-3 py-2" />
+            className={inputCls} />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Description *</label>
           <textarea name="description" required maxLength={2000} rows={4}
-            className="w-full border rounded px-3 py-2" />
+            className={inputCls} />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Category *</label>
-            <select name="categoryCode" required className="w-full border rounded px-3 py-2">
+            <select name="categoryCode" required className={inputCls}>
               <option value="">Select...</option>
               {categories.map(c => (
                 <option key={c.code} value={c.code}>{c.nameEn}</option>
@@ -97,7 +97,7 @@ export function CreateListingPage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Type *</label>
-            <select name="listingType" required className="w-full border rounded px-3 py-2">
+            <select name="listingType" required className={inputCls}>
               <option value="SELL">Sell</option>
               <option value="GIVEAWAY">Giveaway</option>
             </select>
@@ -107,19 +107,19 @@ export function CreateListingPage() {
           <div>
             <label className="block text-sm font-medium mb-1">Price</label>
             <input name="price" type="number" step="0.01" min="0"
-              className="w-full border rounded px-3 py-2" />
+              className={inputCls} />
             {fieldErrors.price && <p className="text-red-600 text-xs mt-1">{fieldErrors.price}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Original Price</label>
             <input name="originalPrice" type="number" step="0.01" min="0"
-              className="w-full border rounded px-3 py-2" />
+              className={inputCls} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Condition</label>
-            <select name="condition" className="w-full border rounded px-3 py-2">
+            <select name="condition" className={inputCls}>
               <option value="">Not specified</option>
               <option value="NEW">New</option>
               <option value="LIKE_NEW">Like New</option>
@@ -131,13 +131,13 @@ export function CreateListingPage() {
           <div>
             <label className="block text-sm font-medium mb-1">Meet At</label>
             <input name="meetAt" maxLength={100}
-              className="w-full border rounded px-3 py-2" />
+              className={inputCls} />
           </div>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Reason for Selling</label>
           <input name="reasonForSelling" maxLength={100}
-            className="w-full border rounded px-3 py-2" />
+            className={inputCls} />
         </div>
         <div className="flex items-center gap-2">
           <input name="negotiable" type="checkbox" id="negotiable" />
@@ -150,10 +150,13 @@ export function CreateListingPage() {
           {fieldErrors.image && <p className="text-red-600 text-xs mt-1">{fieldErrors.image}</p>}
         </div>
         <button type="submit" disabled={submitting}
-          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50">
+          className="w-full rounded-md bg-blue-600 text-white py-2 hover:bg-blue-700 disabled:opacity-50">
           {submitting ? 'Creating...' : 'Create Listing'}
         </button>
       </form>
     </main>
   )
 }
+
+const inputCls =
+  'w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none'
