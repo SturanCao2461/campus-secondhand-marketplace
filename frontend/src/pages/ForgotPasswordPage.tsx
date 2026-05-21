@@ -28,8 +28,8 @@ export function ForgotPasswordPage() {
       <div className="mx-auto max-w-md px-4 py-10">
         <h1 className="text-2xl font-semibold">Check your email</h1>
         <p className="mt-3 text-sm text-slate-600">
-          If an account exists for <span className="font-medium">{email}</span>, we sent a
-          password reset link. The link expires in 30 minutes.
+          If an account exists for <span className="font-medium">{email}</span>, we sent a password
+          reset link. The link expires in 30 minutes.
         </p>
         <p className="mt-6 text-sm">
           <Link to="/login" className="font-medium text-blue-600 hover:underline">
@@ -43,9 +43,7 @@ export function ForgotPasswordPage() {
   return (
     <div className="mx-auto max-w-md px-4 py-10">
       <h1 className="text-2xl font-semibold">Forgot your password?</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        Enter your email and we'll send a reset link.
-      </p>
+      <p className="mt-2 text-sm text-slate-600">Enter your email and we'll send a reset link.</p>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <label className="block text-sm">
@@ -71,7 +69,9 @@ export function ForgotPasswordPage() {
         </button>
 
         <p className="text-center text-sm">
-          <Link to="/login" className="text-slate-600 hover:underline">Back to log in</Link>
+          <Link to="/login" className="text-slate-600 hover:underline">
+            Back to log in
+          </Link>
         </p>
       </form>
     </div>

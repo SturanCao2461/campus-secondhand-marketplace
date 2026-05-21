@@ -2,14 +2,9 @@ import { test, expect } from '@playwright/test'
 import { resetRateLimits } from './helpers/rateLimit'
 import { e2eFixture } from './helpers/paths'
 
-const uniqueEmail = (prefix: string) =>
-  `${prefix}-${Date.now()}@students.waikato.ac.nz`
+const uniqueEmail = (prefix: string) => `${prefix}-${Date.now()}@students.waikato.ac.nz`
 
-async function register(
-  page: import('@playwright/test').Page,
-  email: string,
-  nickname: string
-) {
+async function register(page: import('@playwright/test').Page, email: string, nickname: string) {
   await page.goto('/register')
   await page.fill('input[name="email"]', email)
   await page.fill('input[name="password"]', 'Pass1234')
@@ -19,10 +14,7 @@ async function register(
   await page.waitForURL('/')
 }
 
-async function login(
-  page: import('@playwright/test').Page,
-  email: string
-) {
+async function login(page: import('@playwright/test').Page, email: string) {
   await page.goto('/login')
   await page.fill('input[name="email"]', email)
   await page.fill('input[name="password"]', 'Pass1234')

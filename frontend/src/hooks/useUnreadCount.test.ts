@@ -87,10 +87,9 @@ describe('useUnreadCount', () => {
   it('resets count to 0 when disabled after being enabled', async () => {
     mockedUnreadCount.mockResolvedValue({ total: 7 })
 
-    const { result, rerender } = renderHook(
-      ({ enabled }) => useUnreadCount(enabled),
-      { initialProps: { enabled: true } }
-    )
+    const { result, rerender } = renderHook(({ enabled }) => useUnreadCount(enabled), {
+      initialProps: { enabled: true },
+    })
 
     await act(async () => {
       await Promise.resolve()

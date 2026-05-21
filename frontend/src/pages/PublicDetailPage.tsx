@@ -17,7 +17,8 @@ export function PublicDetailPage() {
 
   useEffect(() => {
     if (!id) return
-    listingsApi.getDetail(Number(id))
+    listingsApi
+      .getDetail(Number(id))
       .then(setListing)
       .catch(err => {
         if (err instanceof ApiError && err.code === 'LISTING_NOT_FOUND') {
@@ -29,25 +30,39 @@ export function PublicDetailPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  if (loading) return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
-  if (error) return (
-    <main className="max-w-2xl mx-auto p-6">
-      <p className="text-gray-600 mb-4">{error}</p>
-      <Link to="/browse" className="text-blue-600 hover:underline">&larr; Back to Browse</Link>
-    </main>
-  )
+  if (loading)
+    return (
+      <main className="max-w-2xl mx-auto p-6">
+        <Spinner />
+      </main>
+    )
+  if (error)
+    return (
+      <main className="max-w-2xl mx-auto p-6">
+        <p className="text-gray-600 mb-4">{error}</p>
+        <Link to="/browse" className="text-blue-600 hover:underline">
+          &larr; Back to Browse
+        </Link>
+      </main>
+    )
   if (!listing) return null
 
   return (
     <main className="max-w-2xl mx-auto p-6">
-      <img src={listing.imageUrl} alt={listing.title}
-        className="w-full h-64 object-cover rounded-lg bg-gray-100 mb-4" />
+      <img
+        src={listing.imageUrl}
+        alt={listing.title}
+        className="w-full h-64 object-cover rounded-lg bg-gray-100 mb-4"
+      />
 
       <div className="flex justify-between items-start mb-4">
         <h1 className="text-2xl font-bold">{listing.title}</h1>
         <span className="text-lg font-semibold text-blue-600">
-          {listing.listingType === 'GIVEAWAY' ? 'Free' :
-            listing.price != null ? `$${listing.price.toFixed(2)}` : ''}
+          {listing.listingType === 'GIVEAWAY'
+            ? 'Free'
+            : listing.price != null
+              ? `$${listing.price.toFixed(2)}`
+              : ''}
         </span>
       </div>
 
@@ -55,7 +70,9 @@ export function PublicDetailPage() {
         <span className="text-xs bg-gray-100 px-2 py-1 rounded">{listing.status}</span>
         <span className="text-xs bg-gray-100 px-2 py-1 rounded">{listing.category.nameEn}</span>
         {listing.condition && (
-          <span className="text-xs bg-gray-100 px-2 py-1 rounded">{listing.condition.replace('_', ' ')}</span>
+          <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+            {listing.condition.replace('_', ' ')}
+          </span>
         )}
         {listing.negotiable && (
           <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Negotiable</span>
@@ -65,7 +82,9 @@ export function PublicDetailPage() {
       <p className="text-gray-700 mb-4 whitespace-pre-wrap">{listing.description}</p>
 
       {listing.originalPrice != null && (
-        <p className="text-sm text-gray-500 mb-2">Original price: ${listing.originalPrice.toFixed(2)}</p>
+        <p className="text-sm text-gray-500 mb-2">
+          Original price: ${listing.originalPrice.toFixed(2)}
+        </p>
       )}
       {listing.meetAt && <p className="text-sm text-gray-500 mb-2">Meet at: {listing.meetAt}</p>}
       {listing.reasonForSelling && (

@@ -25,10 +25,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="fixed top-4 right-4 z-50 space-y-2" aria-live="polite">
         {toasts.map(t => (
-          <div key={t.id}
+          <div
+            key={t.id}
             className={`px-4 py-2 rounded shadow-lg text-sm text-white transition-opacity ${
               t.type === 'success' ? 'bg-green-600' : 'bg-red-600'
-            }`}>
+            }`}
+          >
             {t.message}
           </div>
         ))}

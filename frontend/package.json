@@ -11,7 +11,9 @@
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\" \"e2e/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\" \"e2e/**/*.ts\""
   },
   "dependencies": {
     "react": "^19.2.4",
@@ -34,6 +36,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "jsdom": "^29.1.1",
+    "prettier": "3.8.3",
     "tailwindcss": "^4.2.4",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",

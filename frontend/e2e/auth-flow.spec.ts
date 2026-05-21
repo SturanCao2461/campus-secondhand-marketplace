@@ -1,8 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { resetRateLimits } from './helpers/rateLimit'
 
-const uniqueEmail = (prefix: string) =>
-  `${prefix}-${Date.now()}@students.waikato.ac.nz`
+const uniqueEmail = (prefix: string) => `${prefix}-${Date.now()}@students.waikato.ac.nz`
 
 test.describe('Auth Flow', () => {
   test.beforeEach(() => {

@@ -3,11 +3,7 @@ import { api, ApiError } from './apiClient'
 
 const originalFetch = globalThis.fetch
 
-function mockFetchResponse(opts: {
-  status?: number
-  ok?: boolean
-  json?: () => Promise<unknown>
-}) {
+function mockFetchResponse(opts: { status?: number; ok?: boolean; json?: () => Promise<unknown> }) {
   return {
     status: opts.status ?? 200,
     ok: opts.ok ?? (opts.status ?? 200) < 400,
@@ -96,9 +92,7 @@ describe('apiClient', () => {
 
   it('sends JSON body with Content-Type when provided', async () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>
-    fetchMock.mockResolvedValue(
-      mockFetchResponse({ status: 200, json: () => Promise.resolve({}) })
-    )
+    fetchMock.mockResolvedValue(mockFetchResponse({ status: 200, json: () => Promise.resolve({}) }))
 
     await api.post('/api/x', { name: 'alice' })
 
@@ -112,9 +106,7 @@ describe('apiClient', () => {
 
   it('omits Content-Type for GET without body', async () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>
-    fetchMock.mockResolvedValue(
-      mockFetchResponse({ status: 200, json: () => Promise.resolve({}) })
-    )
+    fetchMock.mockResolvedValue(mockFetchResponse({ status: 200, json: () => Promise.resolve({}) }))
 
     await api.get('/api/x')
 

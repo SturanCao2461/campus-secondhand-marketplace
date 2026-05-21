@@ -11,21 +11,28 @@ export function HomePage() {
         Buy and sell secondhand items with other University of Waikato students.
       </p>
       <div className="mt-8 flex justify-center gap-4">
-        <Link to="/browse"
-          className="bg-blue-600 text-white px-6 py-3 rounded-lg text-lg hover:bg-blue-700">
+        <Link
+          to="/browse"
+          className="bg-blue-600 text-white px-6 py-3 rounded-lg text-lg hover:bg-blue-700"
+        >
           Browse Listings
         </Link>
-        {!loading && (user ? (
-          <Link to="/listings/new"
-            className="border border-slate-300 px-6 py-3 rounded-lg text-lg hover:bg-slate-50">
-            Sell an Item
-          </Link>
-        ) : (
-          <Link to="/register"
-            className="border border-slate-300 px-6 py-3 rounded-lg text-lg hover:bg-slate-50">
-            Sign Up
-          </Link>
-        ))}
+        {!loading &&
+          (user ? (
+            <Link
+              to="/listings/new"
+              className="border border-slate-300 px-6 py-3 rounded-lg text-lg hover:bg-slate-50"
+            >
+              Sell an Item
+            </Link>
+          ) : (
+            <Link
+              to="/register"
+              className="border border-slate-300 px-6 py-3 rounded-lg text-lg hover:bg-slate-50"
+            >
+              Sign Up
+            </Link>
+          ))}
       </div>
     </div>
   )

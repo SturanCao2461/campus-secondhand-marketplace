@@ -9,21 +9,36 @@ export function ConversationsPage() {
   const nav = useNavigate()
 
   useEffect(() => {
-    conversationsApi.list()
+    conversationsApi
+      .list()
       .then(setConversations)
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
+  if (loading)
+    return (
+      <main className="max-w-2xl mx-auto p-6">
+        <Spinner />
+      </main>
+    )
 
   if (conversations.length === 0) {
     return (
       <main className="max-w-2xl mx-auto p-6">
         <div className="text-center py-12 text-gray-500">
-          <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          <svg
+            className="mx-auto h-16 w-16 text-gray-300 mb-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+            />
           </svg>
           <p className="text-lg mb-2">No conversations yet</p>
           <Link to="/browse" className="text-sm text-blue-600 hover:underline">
@@ -51,9 +66,7 @@ export function ConversationsPage() {
               />
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-baseline">
-                  <span className="font-medium text-sm truncate">
-                    {conv.counterpartNickname}
-                  </span>
+                  <span className="font-medium text-sm truncate">{conv.counterpartNickname}</span>
                   <span className="text-xs text-gray-400 flex-shrink-0">
                     {formatRelativeTime(conv.lastMessageAt)}
                   </span>

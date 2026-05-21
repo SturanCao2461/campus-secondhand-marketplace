@@ -19,7 +19,9 @@ export function Navbar() {
           Campus Marketplace
         </Link>
         <nav className="flex items-center gap-4 text-sm">
-          <Link to="/browse" className="text-slate-700 hover:underline">Browse</Link>
+          <Link to="/browse" className="text-slate-700 hover:underline">
+            Browse
+          </Link>
           {!loading && user && (
             <>
               <Link to="/conversations" className="relative text-slate-700 hover:underline">
@@ -30,7 +32,9 @@ export function Navbar() {
                   </span>
                 )}
               </Link>
-              <Link to="/listings/mine" className="text-slate-700 hover:underline">My Listings</Link>
+              <Link to="/listings/mine" className="text-slate-700 hover:underline">
+                My Listings
+              </Link>
               <span className="text-slate-600">Hi, {user.nickname}</span>
               <button
                 onClick={onLogout}
@@ -42,7 +46,9 @@ export function Navbar() {
           )}
           {!loading && !user && (
             <>
-              <Link to="/login" className="text-slate-700 hover:underline">Log in</Link>
+              <Link to="/login" className="text-slate-700 hover:underline">
+                Log in
+              </Link>
               <Link
                 to="/register"
                 className="rounded-md bg-blue-600 px-3 py-1 text-white hover:bg-blue-700"

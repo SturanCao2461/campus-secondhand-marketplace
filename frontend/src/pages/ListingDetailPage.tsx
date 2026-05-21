@@ -16,7 +16,8 @@ export function ListingDetailPage() {
 
   useEffect(() => {
     if (!id) return
-    listingsApi.getOne(Number(id))
+    listingsApi
+      .getOne(Number(id))
       .then(setListing)
       .catch(err => {
         if (err instanceof ApiError && err.code === 'LISTING_NOT_FOUND') {
@@ -51,8 +52,18 @@ export function ListingDetailPage() {
     }
   }
 
-  if (loading) return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
-  if (error) return <main className="max-w-2xl mx-auto p-6"><div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div></main>
+  if (loading)
+    return (
+      <main className="max-w-2xl mx-auto p-6">
+        <Spinner />
+      </main>
+    )
+  if (error)
+    return (
+      <main className="max-w-2xl mx-auto p-6">
+        <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+      </main>
+    )
   if (!listing) return null
 
   const isRemoved = listing.status === 'REMOVED'
@@ -65,14 +76,20 @@ export function ListingDetailPage() {
         </div>
       )}
 
-      <img src={listing.imageUrl} alt={listing.title}
-        className="w-full h-64 object-cover rounded-lg bg-gray-100 mb-4" />
+      <img
+        src={listing.imageUrl}
+        alt={listing.title}
+        className="w-full h-64 object-cover rounded-lg bg-gray-100 mb-4"
+      />
 
       <div className="flex justify-between items-start mb-4">
         <h1 className="text-2xl font-bold">{listing.title}</h1>
         <span className="text-lg font-semibold text-blue-600">
-          {listing.listingType === 'GIVEAWAY' ? 'Free' :
-            listing.price != null ? `$${listing.price.toFixed(2)}` : ''}
+          {listing.listingType === 'GIVEAWAY'
+            ? 'Free'
+            : listing.price != null
+              ? `$${listing.price.toFixed(2)}`
+              : ''}
         </span>
       </div>
 
@@ -80,7 +97,9 @@ export function ListingDetailPage() {
         <span className="text-xs bg-gray-100 px-2 py-1 rounded">{listing.status}</span>
         <span className="text-xs bg-gray-100 px-2 py-1 rounded">{listing.category.nameEn}</span>
         {listing.condition && (
-          <span className="text-xs bg-gray-100 px-2 py-1 rounded">{listing.condition.replace('_', ' ')}</span>
+          <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+            {listing.condition.replace('_', ' ')}
+          </span>
         )}
         {listing.negotiable && (
           <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Negotiable</span>
@@ -90,41 +109,73 @@ export function ListingDetailPage() {
       <p className="text-gray-700 mb-4 whitespace-pre-wrap">{listing.description}</p>
 
       {listing.originalPrice != null && (
-        <p className="text-sm text-gray-500 mb-2">Original price: ${listing.originalPrice.toFixed(2)}</p>
+        <p className="text-sm text-gray-500 mb-2">
+          Original price: ${listing.originalPrice.toFixed(2)}
+        </p>
       )}
       {listing.meetAt && <p className="text-sm text-gray-500 mb-2">Meet at: {listing.meetAt}</p>}
       {listing.reasonForSelling && (
         <p className="text-sm text-gray-500 mb-4">Reason: {listing.reasonForSelling}</p>
       )}
 
-      {actionError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{actionError}</div>}
+      {actionError && (
+        <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{actionError}</div>
+      )}
 
       {!isRemoved && (
         <div className="flex flex-wrap gap-2 mb-4">
           {listing.status === 'AVAILABLE' && (
             <>
-              <button onClick={() => handleStatusChange('RESERVED')}
-                className="px-3 py-1 bg-yellow-500 text-white rounded text-sm">Mark Reserved</button>
-              <button onClick={() => handleStatusChange('SOLD')}
-                className="px-3 py-1 bg-blue-500 text-white rounded text-sm">Mark Sold</button>
+              <button
+                onClick={() => handleStatusChange('RESERVED')}
+                className="px-3 py-1 bg-yellow-500 text-white rounded text-sm"
+              >
+                Mark Reserved
+              </button>
+              <button
+                onClick={() => handleStatusChange('SOLD')}
+                className="px-3 py-1 bg-blue-500 text-white rounded text-sm"
+              >
+                Mark Sold
+              </button>
             </>
           )}
           {listing.status === 'RESERVED' && (
             <>
-              <button onClick={() => handleStatusChange('AVAILABLE')}
-                className="px-3 py-1 bg-green-500 text-white rounded text-sm">Back to Available</button>
-              <button onClick={() => handleStatusChange('SOLD')}
-                className="px-3 py-1 bg-blue-500 text-white rounded text-sm">Mark Sold</button>
+              <button
+                onClick={() => handleStatusChange('AVAILABLE')}
+                className="px-3 py-1 bg-green-500 text-white rounded text-sm"
+              >
+                Back to Available
+              </button>
+              <button
+                onClick={() => handleStatusChange('SOLD')}
+                className="px-3 py-1 bg-blue-500 text-white rounded text-sm"
+              >
+                Mark Sold
+              </button>
             </>
           )}
           {listing.status === 'SOLD' && (
-            <button onClick={() => handleStatusChange('AVAILABLE')}
-              className="px-3 py-1 bg-green-500 text-white rounded text-sm">Relist</button>
+            <button
+              onClick={() => handleStatusChange('AVAILABLE')}
+              className="px-3 py-1 bg-green-500 text-white rounded text-sm"
+            >
+              Relist
+            </button>
           )}
-          <Link to={`/listings/${listing.id}/edit`}
-            className="px-3 py-1 bg-gray-200 rounded text-sm">Edit</Link>
-          <button onClick={handleDelete}
-            className="px-3 py-1 bg-red-500 text-white rounded text-sm">Delete</button>
+          <Link
+            to={`/listings/${listing.id}/edit`}
+            className="px-3 py-1 bg-gray-200 rounded text-sm"
+          >
+            Edit
+          </Link>
+          <button
+            onClick={handleDelete}
+            className="px-3 py-1 bg-red-500 text-white rounded text-sm"
+          >
+            Delete
+          </button>
         </div>
       )}
 

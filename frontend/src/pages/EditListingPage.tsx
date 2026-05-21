@@ -18,22 +18,22 @@ export function EditListingPage() {
 
   useEffect(() => {
     if (!id) return
-    Promise.all([
-      listingsApi.getOne(Number(id)),
-      categoriesApi.list(),
-    ]).then(([l, c]) => {
-      if (l.status === 'REMOVED') {
-        setError('This listing has been removed and cannot be edited.')
-      }
-      setListing(l)
-      setCategories(c.items)
-    }).catch(err => {
-      if (err instanceof ApiError && err.code === 'LISTING_NOT_FOUND') {
-        navigate('/listings/mine')
-      } else {
-        setError('Failed to load listing.')
-      }
-    }).finally(() => setLoading(false))
+    Promise.all([listingsApi.getOne(Number(id)), categoriesApi.list()])
+      .then(([l, c]) => {
+        if (l.status === 'REMOVED') {
+          setError('This listing has been removed and cannot be edited.')
+        }
+        setListing(l)
+        setCategories(c.items)
+      })
+      .catch(err => {
+        if (err instanceof ApiError && err.code === 'LISTING_NOT_FOUND') {
+          navigate('/listings/mine')
+        } else {
+          setError('Failed to load listing.')
+        }
+      })
+      .finally(() => setLoading(false))
   }, [id, navigate])
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -76,7 +76,12 @@ export function EditListingPage() {
     }
   }
 
-  if (loading) return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
+  if (loading)
+    return (
+      <main className="max-w-2xl mx-auto p-6">
+        <Spinner />
+      </main>
+    )
   if (!listing) return null
   if (listing.status === 'REMOVED') {
     return (
@@ -95,29 +100,49 @@ export function EditListingPage() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium mb-1">Title *</label>
-          <input name="title" required maxLength={80} defaultValue={listing.title}
-            className={inputCls} />
+          <input
+            name="title"
+            required
+            maxLength={80}
+            defaultValue={listing.title}
+            className={inputCls}
+          />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Description *</label>
-          <textarea name="description" required maxLength={2000} rows={4}
+          <textarea
+            name="description"
+            required
+            maxLength={2000}
+            rows={4}
             defaultValue={listing.description}
-            className={inputCls} />
+            className={inputCls}
+          />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Category *</label>
-            <select name="categoryCode" required defaultValue={listing.category.code}
-              className={inputCls}>
+            <select
+              name="categoryCode"
+              required
+              defaultValue={listing.category.code}
+              className={inputCls}
+            >
               {categories.map(c => (
-                <option key={c.code} value={c.code}>{c.nameEn}</option>
+                <option key={c.code} value={c.code}>
+                  {c.nameEn}
+                </option>
               ))}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Type *</label>
-            <select name="listingType" required defaultValue={listing.listingType}
-              className={inputCls}>
+            <select
+              name="listingType"
+              required
+              defaultValue={listing.listingType}
+              className={inputCls}
+            >
               <option value="SELL">Sell</option>
               <option value="GIVEAWAY">Giveaway</option>
             </select>
@@ -126,22 +151,31 @@ export function EditListingPage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Price</label>
-            <input name="price" type="number" step="0.01" min="0"
+            <input
+              name="price"
+              type="number"
+              step="0.01"
+              min="0"
               defaultValue={listing.price ?? ''}
-              className={inputCls} />
+              className={inputCls}
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Original Price</label>
-            <input name="originalPrice" type="number" step="0.01" min="0"
+            <input
+              name="originalPrice"
+              type="number"
+              step="0.01"
+              min="0"
               defaultValue={listing.originalPrice ?? ''}
-              className={inputCls} />
+              className={inputCls}
+            />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Condition</label>
-            <select name="condition" defaultValue={listing.condition ?? ''}
-              className={inputCls}>
+            <select name="condition" defaultValue={listing.condition ?? ''} className={inputCls}>
               <option value="">Not specified</option>
               <option value="NEW">New</option>
               <option value="LIKE_NEW">Like New</option>
@@ -152,29 +186,51 @@ export function EditListingPage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Meet At</label>
-            <input name="meetAt" maxLength={100} defaultValue={listing.meetAt ?? ''}
-              className={inputCls} />
+            <input
+              name="meetAt"
+              maxLength={100}
+              defaultValue={listing.meetAt ?? ''}
+              className={inputCls}
+            />
           </div>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Reason for Selling</label>
-          <input name="reasonForSelling" maxLength={100}
+          <input
+            name="reasonForSelling"
+            maxLength={100}
             defaultValue={listing.reasonForSelling ?? ''}
-            className={inputCls} />
+            className={inputCls}
+          />
         </div>
         <div className="flex items-center gap-2">
-          <input name="negotiable" type="checkbox" id="negotiable"
-            defaultChecked={listing.negotiable} />
-          <label htmlFor="negotiable" className="text-sm">Price is negotiable</label>
+          <input
+            name="negotiable"
+            type="checkbox"
+            id="negotiable"
+            defaultChecked={listing.negotiable}
+          />
+          <label htmlFor="negotiable" className="text-sm">
+            Price is negotiable
+          </label>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Image (leave empty to keep current)</label>
-          <input name="image" type="file" accept="image/jpeg,image/png,image/webp"
-            className="w-full" />
+          <label className="block text-sm font-medium mb-1">
+            Image (leave empty to keep current)
+          </label>
+          <input
+            name="image"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="w-full"
+          />
           <p className="text-xs text-gray-400 mt-1">Current: {listing.imageUrl}</p>
         </div>
-        <button type="submit" disabled={submitting}
-          className="w-full rounded-md bg-blue-600 text-white py-2 hover:bg-blue-700 disabled:opacity-50">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full rounded-md bg-blue-600 text-white py-2 hover:bg-blue-700 disabled:opacity-50"
+        >
           {submitting ? 'Saving...' : 'Save Changes'}
         </button>
       </form>

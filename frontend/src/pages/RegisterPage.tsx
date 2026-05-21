@@ -113,8 +113,7 @@ export function RegisterPage() {
 const inputCls =
   'mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none'
 
-function Field({ label, hint, children }:
-                { label: string; hint?: string; children: ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block text-sm">
       <span className="font-medium text-slate-700">{label}</span>

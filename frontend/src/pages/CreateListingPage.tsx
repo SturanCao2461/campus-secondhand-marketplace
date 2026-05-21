@@ -19,7 +19,10 @@ export function CreateListingPage() {
   useUnsavedChangesGuard(dirty && !submitting)
 
   useEffect(() => {
-    categoriesApi.list().then(r => setCategories(r.items)).catch(() => {})
+    categoriesApi
+      .list()
+      .then(r => setCategories(r.items))
+      .catch(() => {})
   }, [])
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -62,7 +65,8 @@ export function CreateListingPage() {
       if (err instanceof ApiError) {
         if (err.code === 'INVALID_PRICE') setFieldErrors({ price: err.message })
         else if (err.code === 'INVALID_CATEGORY') setFieldErrors({ categoryCode: err.message })
-        else if (err.code === 'INVALID_IMAGE' || err.code === 'MISSING_IMAGE') setFieldErrors({ image: err.message })
+        else if (err.code === 'INVALID_IMAGE' || err.code === 'MISSING_IMAGE')
+          setFieldErrors({ image: err.message })
         else setError(err.message)
       } else setError('Something went wrong.')
     } finally {
@@ -74,16 +78,19 @@ export function CreateListingPage() {
     <main className="max-w-2xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Create Listing</h1>
       {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{error}</div>}
-      <form onSubmit={handleSubmit} className="space-y-4" onChange={() => setDirty(true)} ref={formRef}>
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-4"
+        onChange={() => setDirty(true)}
+        ref={formRef}
+      >
         <div>
           <label className="block text-sm font-medium mb-1">Title *</label>
-          <input name="title" required maxLength={80}
-            className={inputCls} />
+          <input name="title" required maxLength={80} className={inputCls} />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Description *</label>
-          <textarea name="description" required maxLength={2000} rows={4}
-            className={inputCls} />
+          <textarea name="description" required maxLength={2000} rows={4} className={inputCls} />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -91,7 +98,9 @@ export function CreateListingPage() {
             <select name="categoryCode" required className={inputCls}>
               <option value="">Select...</option>
               {categories.map(c => (
-                <option key={c.code} value={c.code}>{c.nameEn}</option>
+                <option key={c.code} value={c.code}>
+                  {c.nameEn}
+                </option>
               ))}
             </select>
           </div>
@@ -106,14 +115,12 @@ export function CreateListingPage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Price</label>
-            <input name="price" type="number" step="0.01" min="0"
-              className={inputCls} />
+            <input name="price" type="number" step="0.01" min="0" className={inputCls} />
             {fieldErrors.price && <p className="text-red-600 text-xs mt-1">{fieldErrors.price}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Original Price</label>
-            <input name="originalPrice" type="number" step="0.01" min="0"
-              className={inputCls} />
+            <input name="originalPrice" type="number" step="0.01" min="0" className={inputCls} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -130,27 +137,35 @@ export function CreateListingPage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Meet At</label>
-            <input name="meetAt" maxLength={100}
-              className={inputCls} />
+            <input name="meetAt" maxLength={100} className={inputCls} />
           </div>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Reason for Selling</label>
-          <input name="reasonForSelling" maxLength={100}
-            className={inputCls} />
+          <input name="reasonForSelling" maxLength={100} className={inputCls} />
         </div>
         <div className="flex items-center gap-2">
           <input name="negotiable" type="checkbox" id="negotiable" />
-          <label htmlFor="negotiable" className="text-sm">Price is negotiable</label>
+          <label htmlFor="negotiable" className="text-sm">
+            Price is negotiable
+          </label>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Image *</label>
-          <input name="image" type="file" accept="image/jpeg,image/png,image/webp" required
-            className="w-full" />
+          <input
+            name="image"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            required
+            className="w-full"
+          />
           {fieldErrors.image && <p className="text-red-600 text-xs mt-1">{fieldErrors.image}</p>}
         </div>
-        <button type="submit" disabled={submitting}
-          className="w-full rounded-md bg-blue-600 text-white py-2 hover:bg-blue-700 disabled:opacity-50">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full rounded-md bg-blue-600 text-white py-2 hover:bg-blue-700 disabled:opacity-50"
+        >
           {submitting ? 'Creating...' : 'Create Listing'}
         </button>
       </form>

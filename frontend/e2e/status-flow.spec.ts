@@ -31,7 +31,9 @@ test.describe('Listing Status Flow', () => {
     await page.waitForURL('/listings/mine')
   })
 
-  test('full status cycle: Available -> Reserved -> Sold -> Available -> Removed', async ({ page }) => {
+  test('full status cycle: Available -> Reserved -> Sold -> Available -> Removed', async ({
+    page,
+  }) => {
     await page.click('text=Status Test Item')
     await page.waitForURL(/\/listings\/\d+/)
 

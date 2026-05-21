@@ -36,14 +36,11 @@ export type UnreadCountResponse = {
 }
 
 export const conversationsApi = {
-  create: (listingId: number) =>
-    api.post<ConversationDetail>('/api/conversations', { listingId }),
+  create: (listingId: number) => api.post<ConversationDetail>('/api/conversations', { listingId }),
 
-  list: () =>
-    api.get<ConversationSummary[]>('/api/conversations'),
+  list: () => api.get<ConversationSummary[]>('/api/conversations'),
 
-  getOne: (id: number) =>
-    api.get<ConversationDetail>(`/api/conversations/${id}`),
+  getOne: (id: number) => api.get<ConversationDetail>(`/api/conversations/${id}`),
 
   getMessages: (id: number, after?: number, limit = 50) => {
     const params = new URLSearchParams()
@@ -55,6 +52,5 @@ export const conversationsApi = {
   sendMessage: (id: number, content: string) =>
     api.post<MessageResponse>(`/api/conversations/${id}/messages`, { content }),
 
-  unreadCount: () =>
-    api.get<UnreadCountResponse>('/api/conversations/unread-count'),
+  unreadCount: () => api.get<UnreadCountResponse>('/api/conversations/unread-count'),
 }

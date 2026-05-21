@@ -25,7 +25,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setLoading(false)
       }
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const login: AuthContextValue['login'] = async (email, password) => {
@@ -34,7 +36,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout: AuthContextValue['logout'] = async () => {
-    try { await api.post('/api/auth/logout') } catch { /* ignore */ }
+    try {
+      await api.post('/api/auth/logout')
+    } catch {
+      /* ignore */
+    }
     setUser(null)
   }
 

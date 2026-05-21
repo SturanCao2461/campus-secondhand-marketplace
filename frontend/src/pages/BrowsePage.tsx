@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { listingsApi, type ListingSummary, type PagedListings, type ListingType } from '../api/listings'
+import {
+  listingsApi,
+  type ListingSummary,
+  type PagedListings,
+  type ListingType,
+} from '../api/listings'
 import { categoriesApi, type Category } from '../api/categories'
 
 export function BrowsePage() {
@@ -17,19 +22,23 @@ export function BrowsePage() {
   const listingType = (searchParams.get('type') || '') as ListingType | ''
 
   useEffect(() => {
-    categoriesApi.list().then(r => setCategories(r.items)).catch(() => {})
+    categoriesApi
+      .list()
+      .then(r => setCategories(r.items))
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
     setLoading(true)
     setError('')
-    listingsApi.browse({
-      page,
-      keyword: keyword || undefined,
-      categoryCode: categoryCode || undefined,
-      listingType: listingType || undefined,
-      sort: sort as 'CREATED_DESC',
-    })
+    listingsApi
+      .browse({
+        page,
+        keyword: keyword || undefined,
+        categoryCode: categoryCode || undefined,
+        listingType: listingType || undefined,
+        sort: sort as 'CREATED_DESC',
+      })
       .then(setData)
       .catch(() => setError('Failed to load listings.'))
       .finally(() => setLoading(false))
@@ -52,22 +61,37 @@ export function BrowsePage() {
           type="text"
           placeholder="Search by title..."
           defaultValue={keyword}
-          onKeyDown={e => { if (e.key === 'Enter') updateParam('keyword', (e.target as HTMLInputElement).value) }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') updateParam('keyword', (e.target as HTMLInputElement).value)
+          }}
           className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none w-48"
         />
-        <select value={categoryCode} onChange={e => updateParam('category', e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none">
+        <select
+          value={categoryCode}
+          onChange={e => updateParam('category', e.target.value)}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none"
+        >
           <option value="">All Categories</option>
-          {categories.map(c => <option key={c.code} value={c.code}>{c.nameEn}</option>)}
+          {categories.map(c => (
+            <option key={c.code} value={c.code}>
+              {c.nameEn}
+            </option>
+          ))}
         </select>
-        <select value={listingType} onChange={e => updateParam('type', e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none">
+        <select
+          value={listingType}
+          onChange={e => updateParam('type', e.target.value)}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none"
+        >
           <option value="">All Types</option>
           <option value="SELL">For Sale</option>
           <option value="GIVEAWAY">Free</option>
         </select>
-        <select value={sort} onChange={e => updateParam('sort', e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none">
+        <select
+          value={sort}
+          onChange={e => updateParam('sort', e.target.value)}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none"
+        >
           <option value="CREATED_DESC">Newest</option>
           <option value="CREATED_ASC">Oldest</option>
           <option value="PRICE_ASC">Price: Low to High</option>
@@ -93,9 +117,18 @@ export function BrowsePage() {
 
       {!loading && !error && data && data.items.length === 0 && (
         <div className="text-center py-12 text-gray-500">
-          <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          <svg
+            className="mx-auto h-16 w-16 text-gray-300 mb-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
           </svg>
           <p className="text-lg">No listings found</p>
           <p className="text-sm mt-1">Try adjusting your search or filters</p>
@@ -106,15 +139,24 @@ export function BrowsePage() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {data.items.map((item: ListingSummary) => (
-              <Link key={item.id} to={`/listings/${item.id}/detail`}
-                className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
-                <img src={item.imageUrl} alt={item.title}
-                  className="w-full h-40 object-cover bg-gray-100" />
+              <Link
+                key={item.id}
+                to={`/listings/${item.id}/detail`}
+                className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow"
+              >
+                <img
+                  src={item.imageUrl}
+                  alt={item.title}
+                  className="w-full h-40 object-cover bg-gray-100"
+                />
                 <div className="p-3">
                   <h3 className="font-medium text-sm truncate">{item.title}</h3>
                   <p className="text-blue-600 font-semibold text-sm mt-1">
-                    {item.listingType === 'GIVEAWAY' ? 'Free' :
-                      item.price != null ? `$${item.price.toFixed(2)}` : ''}
+                    {item.listingType === 'GIVEAWAY'
+                      ? 'Free'
+                      : item.price != null
+                        ? `$${item.price.toFixed(2)}`
+                        : ''}
                   </p>
                   <p className="text-xs text-gray-400 mt-1">{item.category.nameEn}</p>
                 </div>
@@ -124,17 +166,29 @@ export function BrowsePage() {
 
           {data.totalPages > 1 && (
             <div className="flex justify-center gap-2 mt-6">
-              <button onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(page - 1)); setSearchParams(p) }}
+              <button
+                onClick={() => {
+                  const p = new URLSearchParams(searchParams)
+                  p.set('page', String(page - 1))
+                  setSearchParams(p)
+                }}
                 disabled={page === 0}
-                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30">
+                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30"
+              >
                 Previous
               </button>
               <span className="px-3 py-1 text-sm text-gray-600">
                 Page {page + 1} of {data.totalPages}
               </span>
-              <button onClick={() => { const p = new URLSearchParams(searchParams); p.set('page', String(page + 1)); setSearchParams(p) }}
+              <button
+                onClick={() => {
+                  const p = new URLSearchParams(searchParams)
+                  p.set('page', String(page + 1))
+                  setSearchParams(p)
+                }}
                 disabled={page >= data.totalPages - 1}
-                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30">
+                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30"
+              >
                 Next
               </button>
             </div>

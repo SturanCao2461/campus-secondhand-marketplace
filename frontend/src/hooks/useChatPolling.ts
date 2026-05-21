@@ -7,22 +7,25 @@ export function useChatPolling(conversationId: number | null) {
   const lastIdRef = useRef<number>(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const fetchMessages = useCallback(async (afterId?: number) => {
-    if (!conversationId) return
-    try {
-      const msgs = await conversationsApi.getMessages(conversationId, afterId, 50)
-      if (msgs.length > 0) {
-        if (afterId) {
-          setMessages(prev => [...prev, ...msgs])
-        } else {
-          setMessages(msgs)
+  const fetchMessages = useCallback(
+    async (afterId?: number) => {
+      if (!conversationId) return
+      try {
+        const msgs = await conversationsApi.getMessages(conversationId, afterId, 50)
+        if (msgs.length > 0) {
+          if (afterId) {
+            setMessages(prev => [...prev, ...msgs])
+          } else {
+            setMessages(msgs)
+          }
+          lastIdRef.current = msgs[msgs.length - 1].id
         }
-        lastIdRef.current = msgs[msgs.length - 1].id
+      } catch {
+        // ignore polling errors
       }
-    } catch {
-      // ignore polling errors
-    }
-  }, [conversationId])
+    },
+    [conversationId]
+  )
 
   useEffect(() => {
     if (!conversationId) return

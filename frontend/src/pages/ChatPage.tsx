@@ -22,7 +22,8 @@ export function ChatPage() {
 
   useEffect(() => {
     if (!convId) return
-    conversationsApi.getOne(convId)
+    conversationsApi
+      .getOne(convId)
       .then(setConv)
       .catch(() => nav('/conversations'))
       .finally(() => setLoadingConv(false))
@@ -66,7 +67,11 @@ export function ChatPage() {
   }
 
   if (loadingConv || loadingMsgs) {
-    return <main className="max-w-2xl mx-auto p-6"><Spinner /></main>
+    return (
+      <main className="max-w-2xl mx-auto p-6">
+        <Spinner />
+      </main>
+    )
   }
   if (!conv) return null
 
@@ -74,11 +79,20 @@ export function ChatPage() {
     <main className="max-w-2xl mx-auto flex flex-col h-[calc(100vh-57px)]">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b bg-white sticky top-0">
-        <Link to="/conversations" className="text-gray-500 hover:text-gray-700">&larr;</Link>
-        <img src={conv.listingImageUrl} alt="" className="w-10 h-10 rounded object-cover bg-gray-100" />
+        <Link to="/conversations" className="text-gray-500 hover:text-gray-700">
+          &larr;
+        </Link>
+        <img
+          src={conv.listingImageUrl}
+          alt=""
+          className="w-10 h-10 rounded object-cover bg-gray-100"
+        />
         <div className="min-w-0">
           <p className="font-medium text-sm truncate">{conv.counterpartNickname}</p>
-          <Link to={`/listings/${conv.listingId}/detail`} className="text-xs text-blue-600 hover:underline truncate block">
+          <Link
+            to={`/listings/${conv.listingId}/detail`}
+            className="text-xs text-blue-600 hover:underline truncate block"
+          >
             {conv.listingTitle}
           </Link>
         </div>
@@ -97,12 +111,17 @@ export function ChatPage() {
                 </p>
               )}
               <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap ${
-                  isOwn ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'
-                }`}>
+                <div
+                  className={`max-w-[75%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap ${
+                    isOwn ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'
+                  }`}
+                >
                   {msg.content}
                   <p className={`text-[10px] mt-1 ${isOwn ? 'text-blue-200' : 'text-gray-400'}`}>
-                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(msg.createdAt).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </p>
                 </div>
               </div>

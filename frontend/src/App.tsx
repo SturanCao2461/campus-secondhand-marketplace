@@ -34,13 +34,62 @@ export default function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
-              <Route path="/me" element={<ProtectedRoute><MePage /></ProtectedRoute>} />
-              <Route path="/listings/new" element={<ProtectedRoute><CreateListingPage /></ProtectedRoute>} />
-              <Route path="/listings/mine" element={<ProtectedRoute><MyListingsPage /></ProtectedRoute>} />
-              <Route path="/listings/:id" element={<ProtectedRoute><ListingDetailPage /></ProtectedRoute>} />
-              <Route path="/listings/:id/edit" element={<ProtectedRoute><EditListingPage /></ProtectedRoute>} />
-              <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
-              <Route path="/conversations/:id" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+              <Route
+                path="/me"
+                element={
+                  <ProtectedRoute>
+                    <MePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/listings/new"
+                element={
+                  <ProtectedRoute>
+                    <CreateListingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/listings/mine"
+                element={
+                  <ProtectedRoute>
+                    <MyListingsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/listings/:id"
+                element={
+                  <ProtectedRoute>
+                    <ListingDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/listings/:id/edit"
+                element={
+                  <ProtectedRoute>
+                    <EditListingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/conversations"
+                element={
+                  <ProtectedRoute>
+                    <ConversationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/conversations/:id"
+                element={
+                  <ProtectedRoute>
+                    <ChatPage />
+                  </ProtectedRoute>
+                }
+              />
             </Routes>
           </ErrorBoundary>
         </ToastProvider>
