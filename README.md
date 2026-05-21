@@ -167,6 +167,10 @@ The E2E suite resets Redis rate-limit counters between tests via a `docker exec`
 | [`docs/engineering-journal.md`](docs/engineering-journal.md) | Numbered decision log — every non-trivial design choice with rationale, trade-offs, and lessons (currently D-1..D-65) |
 | [`docs/project-structure.md`](docs/project-structure.md) | File-by-file inventory: which class does what and which milestone introduced it |
 | [`docs/manual-e2e-epic1.md`](docs/manual-e2e-epic1.md) | Manual UAT checklist for auth (epic 1) |
+| [`docs/manual-e2e-epic2.md`](docs/manual-e2e-epic2.md) | Manual UAT checklist for listings CRUD (epic 2) |
+| [`docs/manual-e2e-epic3.md`](docs/manual-e2e-epic3.md) | Manual UAT checklist for ownership-aware extensions (epic 3) |
+| [`docs/manual-e2e-epic4.md`](docs/manual-e2e-epic4.md) | Manual UAT checklist for browse/search/filter (epic 4) |
+| [`docs/manual-e2e-epic5.md`](docs/manual-e2e-epic5.md) | Manual UAT checklist for messaging (epic 5) |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Per-epic design specs |
 | [`docs/superpowers/plans/`](docs/superpowers/plans/) | Per-epic implementation plans |
 
