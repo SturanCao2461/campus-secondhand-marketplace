@@ -15,6 +15,8 @@ import { ListingDetailPage } from './pages/ListingDetailPage'
 import { EditListingPage } from './pages/EditListingPage'
 import { BrowsePage } from './pages/BrowsePage'
 import { PublicDetailPage } from './pages/PublicDetailPage'
+import { ConversationsPage } from './pages/ConversationsPage'
+import { ChatPage } from './pages/ChatPage'
 
 export default function App() {
   return (
@@ -35,6 +37,8 @@ export default function App() {
             <Route path="/listings/mine" element={<ProtectedRoute><MyListingsPage /></ProtectedRoute>} />
             <Route path="/listings/:id" element={<ProtectedRoute><ListingDetailPage /></ProtectedRoute>} />
             <Route path="/listings/:id/edit" element={<ProtectedRoute><EditListingPage /></ProtectedRoute>} />
+            <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
+            <Route path="/conversations/:id" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           </Routes>
         </ToastProvider>
       </AuthProvider>

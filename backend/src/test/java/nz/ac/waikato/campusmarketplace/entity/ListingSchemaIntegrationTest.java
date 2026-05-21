@@ -2,7 +2,9 @@ package nz.ac.waikato.campusmarketplace.entity;
 
 import nz.ac.waikato.campusmarketplace.AbstractIntegrationTest;
 import nz.ac.waikato.campusmarketplace.repository.CategoryRepository;
+import nz.ac.waikato.campusmarketplace.repository.ConversationRepository;
 import nz.ac.waikato.campusmarketplace.repository.ListingRepository;
+import nz.ac.waikato.campusmarketplace.repository.MessageRepository;
 import nz.ac.waikato.campusmarketplace.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,10 +25,14 @@ class ListingSchemaIntegrationTest extends AbstractIntegrationTest {
     @Autowired ListingRepository listings;
     @Autowired UserRepository users;
     @Autowired CategoryRepository categories;
+    @Autowired ConversationRepository conversationRepo;
+    @Autowired MessageRepository messageRepo;
     @Autowired JdbcTemplate jdbc;
 
     @BeforeEach
     void clean() {
+        messageRepo.deleteAllInBatch();
+        conversationRepo.deleteAllInBatch();
         listings.deleteAllInBatch();
         users.deleteAllInBatch();
     }

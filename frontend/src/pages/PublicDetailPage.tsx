@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { listingsApi, type Listing } from '../api/listings'
+import { conversationsApi } from '../api/conversations'
+import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../api/apiClient'
 
 export function PublicDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
+  const nav = useNavigate()
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [contacting, setContacting] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -71,6 +76,24 @@ export function PublicDetailPage() {
           Listed on {new Date(listing.createdAt).toLocaleDateString()}
         </p>
       </div>
+
+      {user && user.id !== listing.ownerId && (
+        <button
+          onClick={async () => {
+            setContacting(true)
+            try {
+              const conv = await conversationsApi.create(listing.id)
+              nav(`/conversations/${conv.id}`)
+            } catch {
+              setContacting(false)
+            }
+          }}
+          disabled={contacting}
+          className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
+        >
+          {contacting ? 'Opening...' : 'Contact seller'}
+        </button>
+      )}
 
       <Link to="/browse" className="text-blue-600 hover:underline text-sm mt-4 inline-block">
         &larr; Back to Browse

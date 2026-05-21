@@ -2,6 +2,9 @@ package nz.ac.waikato.campusmarketplace.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import nz.ac.waikato.campusmarketplace.AbstractIntegrationTest;
+import nz.ac.waikato.campusmarketplace.repository.ConversationRepository;
+import nz.ac.waikato.campusmarketplace.repository.ListingRepository;
+import nz.ac.waikato.campusmarketplace.repository.MessageRepository;
 import nz.ac.waikato.campusmarketplace.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,11 +26,17 @@ class CategoryControllerIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired TestRestTemplate rest;
     @Autowired UserRepository users;
+    @Autowired MessageRepository messageRepo;
+    @Autowired ConversationRepository conversationRepo;
+    @Autowired ListingRepository listings;
     @Autowired StringRedisTemplate redis;
 
     @BeforeEach
     void clean() {
-        users.deleteAll();
+        messageRepo.deleteAllInBatch();
+        conversationRepo.deleteAllInBatch();
+        listings.deleteAllInBatch();
+        users.deleteAllInBatch();
         redis.getConnectionFactory().getConnection().serverCommands().flushDb();
     }
 

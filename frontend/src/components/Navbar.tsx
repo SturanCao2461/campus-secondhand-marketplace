@@ -1,9 +1,11 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { useUnreadCount } from '../hooks/useUnreadCount'
 
 export function Navbar() {
   const { user, logout } = useAuth()
   const nav = useNavigate()
+  const unread = useUnreadCount(!!user)
 
   const onLogout = async () => {
     await logout()
@@ -20,6 +22,14 @@ export function Navbar() {
           <Link to="/browse" className="text-slate-700 hover:underline">Browse</Link>
           {user ? (
             <>
+              <Link to="/conversations" className="relative text-slate-700 hover:underline">
+                Messages
+                {unread > 0 && (
+                  <span className="absolute -top-1.5 -right-3 min-w-[18px] h-[18px] rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center px-1">
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
+              </Link>
               <Link to="/listings/mine" className="text-slate-700 hover:underline">My Listings</Link>
               <span className="text-slate-600">Hi, {user.nickname}</span>
               <button

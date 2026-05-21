@@ -29,6 +29,8 @@ class ListingRepositoryTest extends AbstractIntegrationTest {
     @Autowired ListingRepository listings;
     @Autowired UserRepository users;
     @Autowired CategoryRepository categories;
+    @Autowired MessageRepository messageRepo;
+    @Autowired ConversationRepository conversationRepo;
 
     private User owner;
     private User stranger;
@@ -44,6 +46,8 @@ class ListingRepositoryTest extends AbstractIntegrationTest {
         // Hibernate action-queue ordering bug where deleteAll + save can
         // INSERT before DELETE and collide with leftover rows from prior
         // non-transactional integration tests.
+        messageRepo.deleteAllInBatch();
+        conversationRepo.deleteAllInBatch();
         listings.deleteAllInBatch();
         users.deleteAllInBatch();
 

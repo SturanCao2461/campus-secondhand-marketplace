@@ -21,7 +21,12 @@ public enum ErrorCode {
     INVALID_CATEGORY(HttpStatus.BAD_REQUEST),
     INVALID_IMAGE(HttpStatus.BAD_REQUEST),
     MISSING_IMAGE(HttpStatus.BAD_REQUEST),
-    INVALID_PRICE(HttpStatus.BAD_REQUEST);
+    INVALID_PRICE(HttpStatus.BAD_REQUEST),
+
+    CONVERSATION_NOT_FOUND(HttpStatus.NOT_FOUND),
+    CONVERSATION_FORBIDDEN(HttpStatus.FORBIDDEN),
+    CANNOT_MESSAGE_SELF(HttpStatus.BAD_REQUEST),
+    MESSAGE_CONTENT_INVALID(HttpStatus.BAD_REQUEST);
 
     private final HttpStatus status;
 

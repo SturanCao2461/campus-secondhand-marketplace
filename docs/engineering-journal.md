@@ -1104,4 +1104,43 @@ All tests use real multipart requests with a 1×1 JPEG generated in-memory. The 
 
 ---
 
-*Last updated: 2026-05-15 — Epic 3 complete (D-57..D-60). 128 backend tests green; public browsing with search/filter/detail live. Milestones 1–4 all complete.*
+---
+
+## Epic 5 — Messaging Module
+
+### D-61 — Two-table data model: denormalised `seller_id` in `conversation` for query ease
+
+**Date / where** Epic 5 Phase 0, 2026-05-21
+**Choice** The `conversation` table stores both `buyer_id` and `seller_id` as foreign keys. `seller_id` is technically redundant (it can be derived from `listing.owner_id`), but it is intentionally denormalised.
+**Why** Every conversation query touches the caller's role: "return conversations where I am the buyer OR the seller." Without `seller_id` on the conversation row, every such query would require a JOIN to `listings` to resolve the seller identity. With `seller_id` denormalised, all per-user conversation queries resolve in a single table scan indexed on `buyer_id` / `seller_id`. At campus scale this is invisible, but it also makes the SQL dramatically simpler — no derived-table subqueries.
+**Invariant maintained** `ConversationService.createOrGetConversation` is the only write path that creates a `conversation` row. It always copies `listing.owner.id` → `seller_id` at creation time. No other code sets `seller_id`. The invariant is maintained by construction, not by a CHECK constraint (MySQL 8.0 supports CHECK but JPA `ddl-auto=update` does not emit them from annotations).
+**Trade-off accepted** If a listing's ownership were transferable, `seller_id` would become stale. Listing ownership is not transferable in this system (no endpoint to change owner), so the denormalisation is safe for the lifetime of the MVP.
+
+> 💡 中文要点：`conversation` 表里直接存 `seller_id`（冗余自 `listing.owner_id`），避免每次"查我参与的会话"都要 JOIN listings。写入时由 `createOrGetConversation` 一处维护不变性。论文答辩时"为什么不归一化"的答案：campus scale 下性能差别可忽略，但查询简洁性和可读性收益实在。Listing 所有权不可转让，所以冗余字段不会过期。
+
+---
+
+### D-62 — Unread count via `last_read_at` timestamps, updated on message fetch
+
+**Date / where** Epic 5 Phase 0, 2026-05-21
+**Choice** Unread count is computed as `COUNT(messages where created_at > my_last_read_at AND sender_id != me)`. The `last_read_at` column (one per role: `buyer_last_read_at` / `seller_last_read_at`) is updated to `NOW()` whenever a user fetches the message list for a conversation.
+**Why** Two alternatives were considered: (1) a boolean `read` flag per message row — simpler per-message but requires updating N rows on open, and adds a column to a high-write table; (2) a separate `read_receipt` junction table — fully general but overkill for a two-party conversation. The timestamp approach requires only two `TIMESTAMP` columns on `conversation` and a single `UPDATE` on message fetch. The trade-off is that unread counts are approximate when a user receives messages faster than the poll interval (5 s), but this is acceptable for the MVP.
+**Side effect rule** `GET /api/conversations/{id}/messages` has an intentional side effect: it updates `last_read_at`. This is documented in the spec and in the controller comment. `GET /api/conversations/{id}` (metadata only) does *not* update `last_read_at` — reading metadata should not mark messages as read.
+
+> 💡 中文要点：未读计数用 `last_read_at` 时间戳而非逐条 `read` flag。拉消息列表时顺带 UPDATE `last_read_at = NOW()`——一个副作用，但有文档说明。GET metadata 端点不触发 UPDATE，避免"只是看了一眼会话列表"就把所有消息标记已读。端到端验证：买家发消息 → 卖家 unread=1 → 卖家读消息 → unread=0。
+
+---
+
+### D-63 — FK constraint ordering in test teardown: messages → conversations → listings → users
+
+**Date / where** Epic 5 Phase 0, 2026-05-21
+**Symptom** After adding the `conversation` and `message` tables (with FK constraints to `listings` and `users`), the full test suite dropped from 128 → 157 tests but then failed with `DataIntegrityViolationException: Cannot delete or update a parent row: a foreign key constraint fails (conversations, CONSTRAINT fk_conversations_listing FOREIGN KEY (listing_id) REFERENCES listings (id))`. This broke the existing `ListingRepositoryTest`, `ListingControllerIntegrationTest`, `ListingSchemaIntegrationTest`, `AuthControllerIntegrationTest`, and `CategoryControllerIntegrationTest`.
+**Root cause** All five test classes called `listings.deleteAllInBatch()` or `users.deleteAll()` in `@BeforeEach` without first cleaning child tables. Before the messaging module existed, no FK children of `listings` or `users` existed, so the cleanup worked fine. With `conversations` now referencing both `listings` (via `listing_id`) and `users` (via `buyer_id` / `seller_id`), and `messages` referencing `conversations`, the deletion order must respect the FK hierarchy: messages → conversations → listings → users.
+**Fix** Injected `MessageRepository` and `ConversationRepository` into the five affected test classes and added `messages.deleteAllInBatch(); conversations.deleteAllInBatch();` before the existing `listings.deleteAllInBatch(); users.deleteAllInBatch();`. Consistent with D-54 lesson: always use `deleteAllInBatch()` (direct SQL) rather than `deleteAll()` (Hibernate action queue) for cross-test-class cleanup.
+**Pattern** This is the third instance of the "test lifecycle silent disagreement" family (D-41 container singleton, D-54 Hibernate flush order, D-63 FK cleanup ordering). The pattern: adding a new FK-constrained table silently breaks cleanup in every test class that deletes from the parent table. Checklist for future tables: whenever a new entity references an existing one, search all `@BeforeEach` cleanup methods for `deleteAllInBatch` on the parent table and prepend child cleanup.
+
+> 💡 中文要点：新增 FK 约束表后，5 个已有测试类的清理顺序全错了——全套跑才暴露，单跑没问题（同 D-41/D-54 族）。修法：在所有 `@BeforeEach` 里按 FK 依赖逆序清理：messages → conversations → listings → users。经验法则：每新增一个引用已有表的实体，就搜全仓库所有 `deleteAllInBatch` 调用，在父表清理前面插子表清理。
+
+---
+
+*Last updated: 2026-05-21 — Epic 5 complete (D-61..D-63). 157 backend tests green; messaging module live (conversations + messages + unread count + rate limiting). Frontend: ConversationsPage, ChatPage, navbar badge, Contact seller CTA, visibility-aware polling, browser notifications.*

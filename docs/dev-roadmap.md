@@ -21,8 +21,12 @@ Browse, search, filter, detail page
 - Frontend: BrowsePage (grid + search + filters + pagination + URL state), PublicDetailPage, public routes
 - SecurityConfig: GET /api/listings, /api/listings/*/detail, /api/uploads/listings/**, /api/categories all permitAll
 
-## Milestone 5
+## Milestone 5 ✅
 Messaging module
+- Completed: 2026-05-21
+- Backend: 2 entities (Conversation + Message), 6 DTOs, 2 repositories, ConversationService (6 methods), ConversationController (6 endpoints), 4 new ErrorCodes, rate limits (30/min send, 10/min create)
+- Frontend: ConversationsPage, ChatPage, useUnreadCount (15s polling), useChatPolling (5s polling), useBrowserNotification, Navbar unread badge, Contact seller CTA on PublicDetailPage
+- Tests: 157 backend tests (128 → 157, +29 new: 14 service unit + 15 controller integration)
 
 ## Milestone 6
 Testing, polish, deployment
