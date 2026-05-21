@@ -157,6 +157,7 @@ The E2E suite resets Redis rate-limit counters between tests via a `docker exec`
 
 | Document | Why you'd read it |
 |---|---|
+| [`docs/architecture.md`](docs/architecture.md) | Mermaid ER diagram + auth and messaging sequence diagrams |
 | [`docs/dev-roadmap.md`](docs/dev-roadmap.md) | Milestone plan and current progress |
 | [`docs/mvp-scope.md`](docs/mvp-scope.md) | What this MVP intentionally does and does not include |
 | [`docs/engineering-journal.md`](docs/engineering-journal.md) | Numbered decision log — every non-trivial design choice with rationale, trade-offs, and lessons (currently D-1..D-65) |
