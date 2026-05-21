@@ -110,6 +110,13 @@ npm run dev
 
 Open <http://localhost:5173>. Register with any `@students.waikato.ac.nz` address (the domain check is the only campus-gate; emails are not actually sent in dev — password-reset tokens are logged to the backend console).
 
+Once the backend is running you can also browse the auto-generated API documentation at:
+
+- **Swagger UI** — <http://localhost:8080/swagger-ui/index.html>
+- **OpenAPI JSON** — <http://localhost:8080/v3/api-docs>
+
+The cookie-based auth scheme is documented in the schema; click the *Authorize* button after logging in via `/api/auth/login` to try authenticated endpoints from the UI.
+
 ### Stopping
 
 ```bash
