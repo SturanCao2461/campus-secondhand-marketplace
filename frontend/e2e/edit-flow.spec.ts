@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { resetRateLimits } from './helpers/rateLimit'
 import { e2eFixture } from './helpers/paths'
+import { markEmailVerified } from './helpers/verifyUser'
 
 const uniqueEmail = () => `e2e-edit-${Date.now()}@students.waikato.ac.nz`
 
@@ -17,6 +18,7 @@ test.describe('Listing Edit Flow', () => {
     await page.fill('input[name="nickname"]', `Edit${Date.now()}`)
     await page.click('button[type="submit"]')
     await page.waitForURL('/')
+    markEmailVerified(email)
 
     // Create
     await page.goto('/listings/new')

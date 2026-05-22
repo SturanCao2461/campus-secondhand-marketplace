@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { resetRateLimits } from './helpers/rateLimit'
 import { e2eFixture } from './helpers/paths'
+import { markEmailVerified } from './helpers/verifyUser'
 
 const uniqueEmail = () => `e2e-status-${Date.now()}@students.waikato.ac.nz`
 
@@ -17,6 +18,7 @@ test.describe('Listing Status Flow', () => {
     await page.fill('input[name="nickname"]', `Status${Date.now()}`)
     await page.click('button[type="submit"]')
     await page.waitForURL('/')
+    markEmailVerified(email)
 
     // Create a listing
     await page.goto('/listings/new')

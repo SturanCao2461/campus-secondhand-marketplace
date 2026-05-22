@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { resetRateLimits } from './helpers/rateLimit'
 import { e2eFixture } from './helpers/paths'
+import { markEmailVerified } from './helpers/verifyUser'
 
 const uniqueEmail = (prefix: string) => `${prefix}-${Date.now()}@students.waikato.ac.nz`
 
@@ -12,6 +13,7 @@ async function register(page: import('@playwright/test').Page, email: string, ni
   await page.fill('input[name="nickname"]', nickname)
   await page.click('button[type="submit"]')
   await page.waitForURL('/')
+  markEmailVerified(email)
 }
 
 async function login(page: import('@playwright/test').Page, email: string) {
