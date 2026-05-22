@@ -97,6 +97,10 @@ public class ConversationService {
 
     @Transactional
     public MessageResponse sendMessage(Long conversationId, User sender, String content) {
+        if (!sender.isEmailVerified()) {
+            throw new ApiException(ErrorCode.EMAIL_NOT_VERIFIED,
+                    "Verify your email before sending messages.");
+        }
         Conversation conv = findAndVerifyParticipant(conversationId, sender.getId());
         enforceSendLimit(sender.getId());
 

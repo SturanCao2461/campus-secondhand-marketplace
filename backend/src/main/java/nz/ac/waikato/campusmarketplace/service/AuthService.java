@@ -32,6 +32,7 @@ public class AuthService {
     private final RateLimitService rateLimit;
     private final JwtService jwt;
     private final EmailService email;
+    private final EmailVerificationService verification;
     private final String emailBaseUrl;
 
     private StringRedisTemplate redis;
@@ -41,12 +42,14 @@ public class AuthService {
                        RateLimitService rateLimit,
                        JwtService jwt,
                        EmailService email,
+                       EmailVerificationService verification,
                        @Value("${app.email.base-url}") String emailBaseUrl) {
         this.users = users;
         this.encoder = encoder;
         this.rateLimit = rateLimit;
         this.jwt = jwt;
         this.email = email;
+        this.verification = verification;
         this.emailBaseUrl = emailBaseUrl;
     }
 
@@ -82,6 +85,9 @@ public class AuthService {
                 .build();
         User saved = users.save(u);
         rateLimit.increment("ratelimit:register:" + ip, Duration.ofHours(1));
+        if (verification != null) {
+            verification.issue(saved);
+        }
         return saved;
     }
 

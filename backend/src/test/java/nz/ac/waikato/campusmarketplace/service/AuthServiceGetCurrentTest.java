@@ -21,7 +21,7 @@ class AuthServiceGetCurrentTest {
         User u = User.builder().id(7L).email("a@x.nz").nickname("A").password("h").build();
         when(users.findById(7L)).thenReturn(Optional.of(u));
 
-        AuthService auth = new AuthService(users, null, null, null, null, null);
+        AuthService auth = new AuthService(users, null, null, null, null, null, null);
         User got = auth.getCurrentUser(7L);
         assertEquals(7L, got.getId());
     }
@@ -30,7 +30,7 @@ class AuthServiceGetCurrentTest {
     void throwsWhenUserMissing() {
         UserRepository users = mock(UserRepository.class);
         when(users.findById(99L)).thenReturn(Optional.empty());
-        AuthService auth = new AuthService(users, null, null, null, null, null);
+        AuthService auth = new AuthService(users, null, null, null, null, null, null);
         ApiException ex = assertThrows(ApiException.class, () -> auth.getCurrentUser(99L));
         assertEquals(ErrorCode.UNAUTHENTICATED, ex.getCode());
     }

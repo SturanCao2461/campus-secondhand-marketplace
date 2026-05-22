@@ -43,7 +43,7 @@ class AuthServiceResetTest {
         redis = mock(StringRedisTemplate.class);
         valueOps = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(valueOps);
-        auth = new AuthService(users, encoder, mock(RateLimitService.class), null, email,
+        auth = new AuthService(users, encoder, mock(RateLimitService.class), null, email, null,
                 "http://localhost:5173");
         auth.setRedis(redis);
     }

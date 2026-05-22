@@ -14,6 +14,7 @@ import nz.ac.waikato.campusmarketplace.exception.ApiException;
 import nz.ac.waikato.campusmarketplace.exception.ErrorCode;
 import nz.ac.waikato.campusmarketplace.filter.AuthPrincipal;
 import nz.ac.waikato.campusmarketplace.service.AuthService;
+import nz.ac.waikato.campusmarketplace.service.EmailVerificationService;
 import nz.ac.waikato.campusmarketplace.service.JwtService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -33,16 +34,18 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService auth;
+    private final EmailVerificationService verification;
     private final JwtService jwt;
     private final String cookieName;
     private final boolean cookieSecure;
     private final String cookieSameSite;
 
-    public AuthController(AuthService auth, JwtService jwt,
+    public AuthController(AuthService auth, EmailVerificationService verification, JwtService jwt,
                           @Value("${app.cookie.name}") String cookieName,
                           @Value("${app.cookie.secure}") boolean cookieSecure,
                           @Value("${app.cookie.same-site}") String cookieSameSite) {
         this.auth = auth;
+        this.verification = verification;
         this.jwt = jwt;
         this.cookieName = cookieName;
         this.cookieSecure = cookieSecure;
@@ -103,6 +106,22 @@ public class AuthController {
     public ResponseEntity<Map<String, Object>> reset(@Valid @RequestBody ResetPasswordRequest req) {
         auth.resetPassword(req.token(), req.newPassword());
         return ResponseEntity.ok(Map.of("ok", true));
+    }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<Void> verifyEmail(@RequestBody Map<String, String> body) {
+        String token = body == null ? null : body.get("token");
+        verification.consume(token);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/resend-verification")
+    public ResponseEntity<Void> resendVerification(@AuthenticationPrincipal AuthPrincipal principal) {
+        if (principal == null) {
+            throw new ApiException(ErrorCode.UNAUTHENTICATED, "Please log in to continue.");
+        }
+        verification.resend(principal.userId());
+        return ResponseEntity.noContent().build();
     }
 
     private void setTokenCookie(HttpServletResponse res, String token, int maxAgeSeconds) {

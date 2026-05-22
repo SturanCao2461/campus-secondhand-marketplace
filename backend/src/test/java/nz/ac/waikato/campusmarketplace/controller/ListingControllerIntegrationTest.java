@@ -441,6 +441,13 @@ class ListingControllerIntegrationTest extends AbstractIntegrationTest {
                 new HttpEntity<>(Map.of("email", email, "password", password, "nickname", nickname), h),
                 JsonNode.class);
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        // Bypass email verification flow in integration tests so the verified-email
+        // gate on POST /api/listings + POST /api/conversations/.../messages does not
+        // require an out-of-band verification email round-trip.
+        users.findByEmail(email).ifPresent(u -> {
+            u.setEmailVerified(true);
+            users.save(u);
+        });
     }
 
     private String loginAndGetCookie(String email, String password) {

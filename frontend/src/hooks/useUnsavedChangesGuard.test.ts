@@ -18,21 +18,21 @@ describe('useUnsavedChangesGuard', () => {
 
   it('does NOT register a beforeunload handler when isDirty is false', () => {
     renderHook(() => useUnsavedChangesGuard(false))
-    const beforeunloadCalls = addSpy.mock.calls.filter(c => c[0] === 'beforeunload')
+    const beforeunloadCalls = addSpy.mock.calls.filter((c: unknown[]) => c[0] === 'beforeunload')
     expect(beforeunloadCalls).toHaveLength(0)
   })
 
   it('registers a beforeunload handler when isDirty is true', () => {
     renderHook(() => useUnsavedChangesGuard(true))
-    const beforeunloadCalls = addSpy.mock.calls.filter(c => c[0] === 'beforeunload')
+    const beforeunloadCalls = addSpy.mock.calls.filter((c: unknown[]) => c[0] === 'beforeunload')
     expect(beforeunloadCalls).toHaveLength(1)
   })
 
   it('removes the handler on unmount', () => {
     const { unmount } = renderHook(() => useUnsavedChangesGuard(true))
-    expect(addSpy.mock.calls.filter(c => c[0] === 'beforeunload')).toHaveLength(1)
+    expect(addSpy.mock.calls.filter((c: unknown[]) => c[0] === 'beforeunload')).toHaveLength(1)
     unmount()
-    const removed = removeSpy.mock.calls.filter(c => c[0] === 'beforeunload')
+    const removed = removeSpy.mock.calls.filter((c: unknown[]) => c[0] === 'beforeunload')
     expect(removed).toHaveLength(1)
   })
 
@@ -40,14 +40,14 @@ describe('useUnsavedChangesGuard', () => {
     const { rerender } = renderHook(({ dirty }) => useUnsavedChangesGuard(dirty), {
       initialProps: { dirty: true },
     })
-    expect(addSpy.mock.calls.filter(c => c[0] === 'beforeunload')).toHaveLength(1)
+    expect(addSpy.mock.calls.filter((c: unknown[]) => c[0] === 'beforeunload')).toHaveLength(1)
     rerender({ dirty: false })
-    expect(removeSpy.mock.calls.filter(c => c[0] === 'beforeunload')).toHaveLength(1)
+    expect(removeSpy.mock.calls.filter((c: unknown[]) => c[0] === 'beforeunload')).toHaveLength(1)
   })
 
   it('the registered handler calls preventDefault and sets returnValue', () => {
     renderHook(() => useUnsavedChangesGuard(true))
-    const handler = addSpy.mock.calls.find(c => c[0] === 'beforeunload')?.[1] as
+    const handler = addSpy.mock.calls.find((c: unknown[]) => c[0] === 'beforeunload')?.[1] as
       | EventListener
       | undefined
     expect(handler).toBeDefined()

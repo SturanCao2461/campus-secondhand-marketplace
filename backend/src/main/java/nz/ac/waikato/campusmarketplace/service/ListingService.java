@@ -46,6 +46,10 @@ public class ListingService {
 
     @Transactional
     public ListingResponse create(User currentUser, CreateListingRequest req, String imagePath) {
+        if (!currentUser.isEmailVerified()) {
+            throw new ApiException(ErrorCode.EMAIL_NOT_VERIFIED,
+                    "Verify your email before posting a listing.");
+        }
         Category category = resolveActiveCategory(req.categoryCode());
         validatePrice(req.listingType(), req.price(), req.originalPrice());
 

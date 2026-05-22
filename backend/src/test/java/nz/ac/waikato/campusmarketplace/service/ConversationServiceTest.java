@@ -49,8 +49,8 @@ class ConversationServiceTest {
         rateLimit = mock(RateLimitService.class);
         svc = new ConversationService(conversations, messages, listings, rateLimit);
 
-        buyer = User.builder().id(1L).email("buyer@x").nickname("Buyer").build();
-        seller = User.builder().id(2L).email("seller@x").nickname("Seller").build();
+        buyer = User.builder().id(1L).email("buyer@x").nickname("Buyer").emailVerified(true).build();
+        seller = User.builder().id(2L).email("seller@x").nickname("Seller").emailVerified(true).build();
 
         listing = Listing.builder().id(10L).title("Test Item").imagePath("listings/test.jpg").owner(seller).build();
 
@@ -119,7 +119,7 @@ class ConversationServiceTest {
 
     @Test
     void getConversationDetail_nonParticipantForbidden() {
-        User stranger = User.builder().id(99L).email("s@x").nickname("Stranger").build();
+        User stranger = User.builder().id(99L).email("s@x").nickname("Stranger").emailVerified(true).build();
         when(conversations.findById(100L)).thenReturn(Optional.of(conv));
 
         assertThatThrownBy(() -> svc.getConversationDetail(100L, stranger))
@@ -157,7 +157,7 @@ class ConversationServiceTest {
 
     @Test
     void sendMessage_nonParticipantForbidden() {
-        User stranger = User.builder().id(99L).email("s@x").nickname("Stranger").build();
+        User stranger = User.builder().id(99L).email("s@x").nickname("Stranger").emailVerified(true).build();
         when(conversations.findById(100L)).thenReturn(Optional.of(conv));
 
         assertThatThrownBy(() -> svc.sendMessage(100L, stranger, "Hi"))

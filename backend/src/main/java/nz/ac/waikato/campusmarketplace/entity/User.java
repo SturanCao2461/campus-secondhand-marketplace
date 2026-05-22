@@ -30,6 +30,10 @@ public class User {
     @Column(nullable = false, unique = true, length = 40)
     private String nickname;
 
+    @Builder.Default
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

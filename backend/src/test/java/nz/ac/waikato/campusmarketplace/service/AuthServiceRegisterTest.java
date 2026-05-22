@@ -31,7 +31,7 @@ class AuthServiceRegisterTest {
         encoder = new BCryptPasswordEncoder();
         rateLimit = mock(RateLimitService.class);
         when(rateLimit.check(any(), any(Long.class), any())).thenReturn(RateLimitDecision.allowed());
-        auth = new AuthService(users, encoder, rateLimit, null, null, null);
+        auth = new AuthService(users, encoder, rateLimit, null, null, null, null);
     }
 
     @Test

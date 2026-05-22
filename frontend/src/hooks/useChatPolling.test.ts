@@ -15,6 +15,7 @@ const msg = (id: number, content = 'hi'): MessageResponse => ({
   id,
   conversationId: 1,
   senderId: 1,
+  senderNickname: 'TestSender',
   content,
   createdAt: new Date(2026, 0, 1, 0, 0, id).toISOString(),
 })

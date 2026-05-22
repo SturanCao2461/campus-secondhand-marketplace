@@ -48,7 +48,7 @@ class ListingServiceCreateTest {
         listings = mock(ListingRepository.class);
         svc = new ListingService(categories, listings);
 
-        owner = User.builder().id(7L).email("o@x").nickname("Owner").build();
+        owner = User.builder().id(7L).email("o@x").nickname("Owner").emailVerified(true).build();
         booksActive = Category.builder()
                 .id(1L).code("BOOKS").nameEn("Books").nameZh("书籍")
                 .sortOrder(10).active(true).build();

@@ -48,7 +48,12 @@ function renderAt(path: string, providerValue: Partial<AuthContextValue>) {
 describe('ProtectedRoute', () => {
   it('renders children when user is authenticated', () => {
     renderAt('/me', {
-      user: { id: 1, email: 'a@students.waikato.ac.nz', nickname: 'A' },
+      user: {
+        id: 1,
+        email: 'a@students.waikato.ac.nz',
+        nickname: 'A',
+        emailVerified: true,
+      },
       loading: false,
     })
     expect(screen.getByText('protected-content')).toBeDefined()

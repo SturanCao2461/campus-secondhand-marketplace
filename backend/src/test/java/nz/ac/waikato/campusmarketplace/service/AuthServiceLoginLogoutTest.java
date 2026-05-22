@@ -44,7 +44,7 @@ class AuthServiceLoginLogoutTest {
         redis = mock(StringRedisTemplate.class);
         valueOps = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(valueOps);
-        auth = new AuthService(users, encoder, rateLimit, jwt, null, null);
+        auth = new AuthService(users, encoder, rateLimit, jwt, null, null, null);
         auth.setRedis(redis);
     }
 
