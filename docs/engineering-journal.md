@@ -1403,4 +1403,36 @@ Auth-flow is **deliberately** untouched — those 8 tests cover the unverified-r
 
 ---
 
-*Last updated: 2026-05-22 — Milestone 6 stage IV complete. Real email verification with soft gate (D-75), E2E bypass mirroring resetRateLimits (D-76). 74 → 76 decisions logged.*
+### D-77 — E2E coverage for the D-75 gate surfaced a real SecurityConfig miss: `/api/auth/verify-email` was never anonymous-permitted
+
+**Date / where** Milestone 6 stage IV, 2026-05-23 (commit `b0d8aad`)
+**Symptom** D-75 shipped the verified-email gate. D-76 added a `markEmailVerified` bypass so the other 21 specs stay green by skipping the gate entirely. That left a real coverage hole: `auth-flow.spec.ts` had **zero** tests proving the gate actually works — 14 specs assumed the gate doesn't exist (via bypass), 0 specs proved it does. Time to fix.
+**The three tests added** to `auth-flow.spec.ts`:
+1. Newly-registered user sees the unverified chip + the "Resend verification email" button on `/me` (the UI half of the gate).
+2. Visiting `/verify-email?token=<real-token>` flips the state to verified and the chip / resend disappear (the happy path).
+3. Visiting `/verify-email?token=this-token-was-never-issued` shows the failure card with the `INVALID_VERIFICATION_TOKEN` message (the sad path).
+**New helper `getVerificationToken()`** — `frontend/e2e/helpers/verificationToken.ts`, 30 lines. Same family as `resetRateLimits` (D-66) and `markEmailVerified` (D-76): `docker exec campus_redis redis-cli --no-raw KEYS "auth:verify:*"`, expects exactly one key (relies on the `resetRateLimits()` FLUSHDB in `beforeEach`), strips the leading `auth:verify:` prefix, returns the token. Dev-only — production has no need.
+**Two parser bugs while building the helper** — worth flagging because both nearly shipped:
+1. **`redis-cli` formats multi-element replies as `1) "key"`, not bare `key`.** First pass did `.replace(/^"|"$/g, '')` to strip quotes, missed the `N) ` index prefix entirely → empty filter → "0 keys found". The hex-dump (`xxd`) of the actual output is what made it obvious: `31 29 20 22 ...` = `1) "`. Fix: `.replace(/^\d+\)\s*/, '').replace(/^"|"$/g, '')`.
+2. **Vite proxy at port 5173 vs direct backend at 8080.** Manually `curl localhost:8080/api/auth/register` worked and the key appeared. But the e2e suite hit `localhost:5173/api/auth/register` via the Vite proxy, and *also* worked. The flaky-looking "0 keys" was actually the parser bug above, not a proxy issue — but the manual `curl` vs Playwright divergence cost 10 minutes of chasing the wrong root cause. **Lesson:** when an integration test says "0 found" and the same probe by hand says "1 found," the gap is almost never network — check the parser first.
+**The real bug e2e caught** — and this is the point of the entry. Test 3 failed not with "invalid or has expired" but with `Please log in to continue.` HTTP 401. Tracing: `/api/auth/verify-email` was never added to `SecurityConfig`'s `permitAll()` list:
+```java
+.requestMatchers(
+    "/api/health",
+    "/api/auth/register",
+    "/api/auth/login",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password"   // verify-email missing here
+).permitAll()
+```
+The endpoint requires auth — but the entire point of the endpoint is that the user clicks the link from an email *before* logging in. The integration tests didn't catch it because they're authenticated via `MockMvc` `with(user(...))`. The 22-spec Playwright suite didn't catch it because every gate-using spec bypasses verification via `markEmailVerified` and never hits `/verify-email`. **The bug was invisible until a test exercised the actual click-the-link-before-login flow.**
+**Pattern observation** Every new endpoint needs three orthogonal contract checks:
+1. **Authentication policy** (is this anonymous, user-only, or admin-only?) — lives in `SecurityConfig`.
+2. **Business validation** (does the handler reject bad inputs?) — lives in service unit tests.
+3. **End-to-end user flow** (does the page that calls this actually reach it?) — lives in Playwright.
+Unit + integration tests caught #2 perfectly. E2E was the only thing that could catch #1 in this case — because #1 is invisible unless the request comes from a real unauthenticated user-agent. D-66's lesson ("untested code is reverse-documentation") applied at a different layer: **untested-by-E2E endpoints quietly drift their authentication policy from the spec**.
+**Lesson** When you add a gate that depends on a new endpoint, ship **both** the bypass (so existing tests keep going green) *and* the through-test (so the endpoint stays in the auth policy you designed). Skip the through-test and the bypass quietly hides regressions in the gate itself. The right shape for the test pyramid here: 1 spec proves the gate works end-to-end, N-1 specs assume the gate works via a bypass. We had N-1 + 0, which is the worst configuration — you pay the bypass complexity without getting the assurance the bypass is supposed to be paired with.
+
+---
+
+*Last updated: 2026-05-23 — D-77 closes the E2E coverage hole on the D-75 gate and catches a real SecurityConfig miss (`/api/auth/verify-email` never anonymous-permitted) along the way. 76 → 77 decisions logged.*
