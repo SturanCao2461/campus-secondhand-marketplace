@@ -57,6 +57,23 @@ Run through this checklist with both backend and frontend running locally.
 ## Anti-enumeration check
 - [ ] Submit forgot-password for `nonexistent@students.waikato.ac.nz` — expect the same "Check your email" page (no clue that the email doesn't exist)
 
+## Verified-email soft gate (D-75)
+> The gate is intentionally **soft**: unverified users can register, log in, and browse, but POST listings / send messages are blocked until verified. The verification email link is logged to the backend stdout in dev (console mode).
+
+- [ ] Register a fresh account `gate-test@students.waikato.ac.nz` / `Pass1234` / `Gate` → land on `/`
+- [ ] Backend log prints an `===== EMAIL (console mode) =====` block with a `/verify-email?token=...` link — keep it visible
+- [ ] Visit `/me` — verify the amber chip "Email not verified" + the yellow info banner with a "Resend verification email" button
+- [ ] Try `/listings/new` and submit a complete listing → expect 403 with `code=EMAIL_NOT_VERIFIED`, frontend shows error banner
+- [ ] On `/me`, click "Resend verification email" → button shows "Sending…" → green "Sent — check your inbox" appears
+- [ ] Backend log prints another email block (resend is idempotent — calling twice does NOT double-flip a already-verified user)
+- [ ] Copy the `/verify-email?token=...` URL from the log → paste into the address bar → green "Email verified" success card appears
+- [ ] Click "Continue to home" → `/`
+- [ ] Visit `/me` again — chip is now green "Email verified", the amber banner and resend button are gone
+- [ ] Try `/listings/new` again → succeeds (gate cleared)
+- [ ] Visit `/verify-email?token=this-token-was-never-issued` directly → red "Verification failed" card with "This verification link is invalid or has expired"
+- [ ] Visit `/verify-email` (no token query param) → same failure card with "Missing verification token"
+- [ ] Verify `POST /api/auth/verify-email` is anonymous-permitted: log out, in DevTools fetch `POST /api/auth/verify-email` with body `{"token":"xxx"}` → expect 400 INVALID_VERIFICATION_TOKEN, NOT 401 (D-77 — this was a real bug caught by E2E)
+
 ## Cleanup
 - [ ] Stop frontend (Ctrl+C)
 - [ ] Stop backend (Ctrl+C)

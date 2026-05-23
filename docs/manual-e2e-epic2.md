@@ -11,6 +11,7 @@ Run through this checklist with backend, frontend, MySQL, and Redis all running 
 ## Prerequisites
 - [ ] Register a new user (e.g. `listing-test@students.waikato.ac.nz` / `Pass1234` / `ListTester`)
 - [ ] Verify navbar shows "My Listings" + "Hi, ListTester"
+- [ ] **Verify the email** (D-75 gate): copy the `/verify-email?token=...` URL from the backend log → paste into the browser → success card → /me shows green "Email verified" chip. Without this step, the next section will fail with `EMAIL_NOT_VERIFIED`.
 
 ## Create Listing
 - [ ] Click "My Listings" → click "+ New Listing"
@@ -70,3 +71,4 @@ Run through this checklist with backend, frontend, MySQL, and Redis all running 
 ## Edge Cases
 - [ ] Try editing a REMOVED listing (navigate directly to `/listings/{id}/edit`) → expect "removed" banner, no form
 - [ ] Try accessing a non-existent listing ID → expect redirect to My Listings
+- [ ] (D-75) Log out and visit `/listings/new` → redirected to `/login?next=...`. Register a fresh account, do NOT verify the email, try to submit a listing → 403 `EMAIL_NOT_VERIFIED`. Verify via `/verify-email?token=...` from backend log → submitting now succeeds.
