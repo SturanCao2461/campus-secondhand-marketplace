@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { resetRateLimits } from './helpers/rateLimit'
+import { getVerificationToken } from './helpers/verificationToken'
 
 const uniqueEmail = (prefix: string) => `${prefix}-${Date.now()}@students.waikato.ac.nz`
 
@@ -165,5 +166,55 @@ test.describe('Auth Flow', () => {
 
     // Should land on /me, not /
     await page.waitForURL('/me')
+  })
+
+  test('newly-registered user sees unverified chip on MePage', async ({ page }) => {
+    const ts = Date.now()
+    const email = uniqueEmail(`unv-${ts}`)
+
+    await page.goto('/register')
+    await page.fill('input[name="email"]', email)
+    await page.fill('input[name="password"]', 'Pass1234')
+    await page.fill('input[name="confirmPassword"]', 'Pass1234')
+    await page.fill('input[name="nickname"]', `Unv${ts}`)
+    await page.click('button[type="submit"]')
+    await page.waitForURL('/')
+
+    await page.goto('/me')
+    await expect(page.locator('text=Email not verified')).toBeVisible()
+    await expect(page.locator('button:has-text("Resend verification email")')).toBeVisible()
+  })
+
+  test('verify-email flips state to verified using real token from Redis', async ({ page }) => {
+    const ts = Date.now()
+    const email = uniqueEmail(`verify-${ts}`)
+
+    // Register — backend issues a verification token to Redis
+    await page.goto('/register')
+    await page.fill('input[name="email"]', email)
+    await page.fill('input[name="password"]', 'Pass1234')
+    await page.fill('input[name="confirmPassword"]', 'Pass1234')
+    await page.fill('input[name="nickname"]', `V${ts}`)
+    await page.click('button[type="submit"]')
+    await page.waitForURL('/')
+
+    // Pull the token straight out of Redis (no email infra in dev)
+    const token = getVerificationToken()
+
+    // Visit the link the user would have clicked in their inbox
+    await page.goto(`/verify-email?token=${token}`)
+    await expect(page.locator('h1:has-text("Email verified")')).toBeVisible()
+
+    // MePage now shows the verified chip and the resend button is gone
+    await page.goto('/me')
+    await expect(page.locator('text=Email verified').first()).toBeVisible()
+    await expect(page.locator('text=Email not verified')).toHaveCount(0)
+    await expect(page.locator('button:has-text("Resend verification email")')).toHaveCount(0)
+  })
+
+  test('verify-email shows failure for invalid token', async ({ page }) => {
+    await page.goto('/verify-email?token=this-token-was-never-issued')
+    await expect(page.locator('h1:has-text("Verification failed")')).toBeVisible()
+    await expect(page.locator('text=/invalid or has expired/i')).toBeVisible()
   })
 })
