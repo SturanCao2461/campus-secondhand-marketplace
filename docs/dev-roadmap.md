@@ -51,6 +51,13 @@ Polish, testing, deployment
 - 3 份 manual UAT checklist（epic3 ownership / epic4 browse / epic5 messaging）
 - README + frontend/README 重写为 GitHub 项目门面级 + 模块导览
 
+### Stage IV — Email verification ✅ (2026-05-22)
+- Real email verification service with soft gate on POST /api/listings + POST /api/conversations/{id}/messages, see D-75
+- Redis-stored 48-byte token (24h TTL) mirroring D-21 password-reset pattern
+- Frontend: `/verify-email` page + verification chip and resend button on MePage
+- E2E: `markEmailVerified()` helper sidesteps the gate via `docker exec mysql` (mirrors `resetRateLimits` from D-66), 22/22 Playwright specs still green, see D-76
+- Out-of-Scope item from `mvp-scope.md` now in scope and shipped
+
 ### Stage III — 工程基础 ✅ (2026-05-22)
 - GitHub Actions CI — backend (Maven + Testcontainers + JaCoCo upload) + frontend (lint/unit/build) 并行 jobs，详见 D-69
 - 修复了 `BackendApplicationTests.contextLoads` 让 CI 全绿（一行 `extends AbstractIntegrationTest` 复用 Testcontainers）

@@ -1356,4 +1356,51 @@ The "latest version" trap is real: I picked 2.6.0 because it appeared in old Sta
 
 ---
 
-*Last updated: 2026-05-22 — Milestone 6 stage III complete + journal back-filled. Vitest baseline (D-72), springdoc 2.6.0→2.8.0 NoSuchMethodError war story (D-73), architecture.md design rationale (D-74). 71 → 74 decisions logged.*
+### D-75 — Real email verification with a *soft* gate (only POST listings + send message), Redis-stored token mirroring D-21
+
+**Date / where** Milestone 6 stage IV, 2026-05-22 (commit `fe15ea0`)
+**Symptom / starting point** MVP scope (`docs/mvp-scope.md`) lists "Email verification service" as Out of Scope, so registration accepted any campus-domain address as authoritative. With auth, listings, browsing, and messaging all shipped, the gap was visible: a typo in the email field still produced a working account that could post listings and message strangers, and there was no path to recover the address. Time to close it without rewriting the auth flow.
+**Design decision: soft gate, not hard gate** A hard gate (block login until verified) was rejected for two reasons:
+1. **Graceful UX during the verification round-trip.** Users register, click the link in the welcome email, get bounced into a half-broken state if anything in between fails — far worse than letting them browse while the email arrives.
+2. **Demo-friendliness.** Local Docker-compose has no real SMTP. A hard gate would require either wiring a fake mail server into the dev story or shipping a dev-only "auto-verify" toggle, both of which leak into production code paths.
+The soft gate places the check at the two state-changing endpoints that involve other users: `POST /api/listings` and `POST /api/conversations/{id}/messages`. Reading is unrestricted; writing-to-others requires verification. The check is the **first** statement in `ListingService.create` and `ConversationService.sendMessage` so the contract is obvious to a reader of those methods, not buried in a filter.
+**Token storage: Redis, mirroring D-21** 48 random bytes, URL-safe Base64, key `auth:verify:{token}`, TTL 24h. Same shape as the password-reset token (D-21) and JWT blacklist (D-15) — short-lived, high-cardinality, native expiration. A `password_reset_tokens` or `email_verification_tokens` MySQL table would need a janitor job; Redis just expires the key. `consume(token)` is `@Transactional` so the `users.email_verified = TRUE` flip and the `redis.delete(key)` either both happen or neither does.
+**Two ergonomic guards in the service** — both real bugs the first version hit:
+1. `setRedis` is `@Autowired(required = false)` instead of constructor-injected. `AuthService` unit tests construct the service directly with `null` for verification, which is what the existing 4 `AuthService*Test` files were already doing for `EmailService`. Constructor-injecting the redis template would have forced 4 more null arguments through the test fixtures for no value.
+2. `issue(user)` is a no-op when `redis == null` (degraded-mode safety) **and** when `user.isEmailVerified()` is already true (idempotent resend — clicking "Resend verification email" twice doesn't double-send).
+**Test fixture fan-out** Adding one required field to `User` rippled across the test suite in three different shapes:
+- 4 `AuthService*Test` files: 6 → 7 constructor args (one-line each, all `null`).
+- 2 service-level fixtures (`ListingServiceCreateTest`, `ConversationServiceTest`): existing `User.builder()...build()` callers now need `.emailVerified(true)`. Forgetting this turns a previously-passing test into `EMAIL_NOT_VERIFIED`, which is informative because the *new* gate fires first.
+- 2 controller integration tests: the synthetic `/api/auth/register` flow now leaves the user unverified. After register, look up via `UserRepository`, set `emailVerified=true`, save. This is the **bypass that doesn't simulate the verification round-trip** — same shape as the resetRateLimits trick from D-66 (sidestep an out-of-band production flow that integration tests shouldn't depend on).
+**Frontend** Three small surfaces:
+- `VerifyEmailPage` at `/verify-email`: reads `?token`, three states (loading spinner / green check card / red failure card with "resend" hint). 80 lines, no state machine library — a `'loading' | 'success' | 'failed'` union and a single `useEffect` is plenty.
+- `MePage`: green or amber chip plus an inline "Resend verification email" button on the unverified branch. The chip surfaces the gate's existence in the UI, so users hitting `EMAIL_NOT_VERIFIED` on POST listings have somewhere to look.
+- `AuthUser.emailVerified` flows through `AuthContext`, so any future page can render verification-aware UI without re-fetching `/api/auth/me`.
+**E2E** The 22-spec Playwright suite was deliberately not wired through the new gate in this commit — that's the next commit (D-76).
+**Lesson** A boundary added late costs less than a boundary added early *if* you place the check at the right two methods. Any earlier (auth filter, controller advice) and reads break unnecessarily; any later (validation deep inside the service) and the gate becomes a maintenance trap. The two methods that mutate other users' worlds — `Listing.create` and `Conversation.sendMessage` — are the right boundary, and the *first line* of each is the right place. Pattern to remember: **late-binding security gates belong at the action boundary, not the request boundary.**
+
+---
+
+### D-76 — E2E bypass for the verified-email gate via `docker exec mysql`, mirroring D-66's resetRateLimits pattern
+
+**Date / where** Milestone 6 stage IV, 2026-05-22 (commit `a5e0a7c`)
+**Symptom** D-75 added the verified-email gate. The 22-spec Playwright suite registers fresh users in every test (the standard pattern from D-66) — every one of those users is now unverified, so 14 of the 22 specs that exercise create-listing / messaging / status-change flows started returning 403 `EMAIL_NOT_VERIFIED` and failing.
+**Two viable shapes for the fix:**
+1. **Drive the real verification flow.** Hit `/api/auth/me` for the userId (or scrape from cookie), grab the verification token from Redis via `docker exec redis-cli`, POST `/api/auth/verify-email` with it. Realistic, but two extra round-trips per test, and it tests the verification flow inadvertently in every spec rather than where it belongs (`auth-flow.spec.ts`).
+2. **Sidestep the gate at the database layer.** One `UPDATE users SET email_verified = 1 WHERE email = ...`. No round-trip with the verification service. Same shape as `resetRateLimits` (D-66), which already sidesteps Redis-stored rate-limit state for the same reason: E2E should not exercise out-of-band production flows that aren't part of the user journey under test.
+Went with #2. The cost is one extra dependency on `docker exec` against the dev MySQL container, which the suite already requires for `resetRateLimits`. The win is that each spec stays focused on its stated scenario (create / edit / messaging / status), not on email plumbing.
+**Implementation** `frontend/e2e/helpers/verifyUser.ts` exports `markEmailVerified(email)`, 30 lines:
+```ts
+docker exec campus_mysql mysql -uappuser -papppassword campus_marketplace \
+  -e "UPDATE users SET email_verified = 1 WHERE email = '...'"
+```
+Single-quote escaping on the email is one `replace(/'/g, "\\'")`. Failures are logged, not thrown, so a CI failure caused by a stopped Docker stack still produces a useful message rather than a generic exec exception.
+**Where it's called** Inside the `register()` helper of each affected spec, immediately after `waitForURL('/')`. Five files:
+- `browse-search-flow.spec.ts`, `create-flow.spec.ts`, `edit-flow.spec.ts`, `messaging-flow.spec.ts`, `status-flow.spec.ts`
+Auth-flow is **deliberately** untouched — those 8 tests cover the unverified-registration UX itself (the chip, the resend button, the error banner on POST listings), so auto-verifying would defeat their purpose.
+**Verification** 22/22 Playwright specs green in 37s, single worker — same numbers as D-66's baseline, gate now in production code, suite still runs in <40s.
+**Lesson** When a new gate ships, the testing question is "does the suite verify the gate exists, or does the suite assume the gate doesn't exist?". The right answer is **both, but in different specs.** auth-flow proves the gate works; every other spec assumes verified state via a bypass. Trying to make all 22 specs drive the real flow doubles their length and turns each into a partial test of the verification service. **Bypass helpers are not a smell when their scope is documented and they mirror an established pattern** — `resetRateLimits` and `markEmailVerified` now form a small family of "sidestep production-only Redis/MySQL state" helpers in `frontend/e2e/helpers/`.
+
+---
+
+*Last updated: 2026-05-22 — Milestone 6 stage IV complete. Real email verification with soft gate (D-75), E2E bypass mirroring resetRateLimits (D-76). 74 → 76 decisions logged.*
