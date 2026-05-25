@@ -171,6 +171,7 @@ The E2E suite resets Redis rate-limit counters between tests via a `docker exec`
 | [`docs/manual-e2e-epic3.md`](docs/manual-e2e-epic3.md) | Manual UAT checklist for ownership-aware extensions (epic 3) |
 | [`docs/manual-e2e-epic4.md`](docs/manual-e2e-epic4.md) | Manual UAT checklist for browse/search/filter (epic 4) |
 | [`docs/manual-e2e-epic5.md`](docs/manual-e2e-epic5.md) | Manual UAT checklist for messaging (epic 5) |
+| [`docs/manual-e2e-full-walkthrough.md`](docs/manual-e2e-full-walkthrough.md) | Full end-to-end walkthrough — all features in one linear pass across two browser profiles (~60 min) |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Per-epic design specs |
 | [`docs/superpowers/plans/`](docs/superpowers/plans/) | Per-epic implementation plans |
 
