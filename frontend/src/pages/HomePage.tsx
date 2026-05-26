@@ -5,35 +5,48 @@ export function HomePage() {
   const { user, loading } = useAuth()
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-16 text-center">
-      <h1 className="text-4xl font-bold">Campus Secondhand Marketplace</h1>
-      <p className="mt-3 text-lg text-slate-600">
-        Buy and sell secondhand items with other University of Waikato students.
-      </p>
-      <div className="mt-8 flex justify-center gap-4">
-        <Link
-          to="/browse"
-          className="bg-blue-600 text-white px-6 py-3 rounded-lg text-lg hover:bg-blue-700"
-        >
-          Browse Listings
-        </Link>
-        {!loading &&
-          (user ? (
+    <main className="relative overflow-hidden">
+      <section className="relative glow-coral glow-sage mx-auto max-w-5xl px-6 py-24 sm:py-32">
+        <div className="relative z-10 max-w-2xl">
+          <p className="text-eyebrow text-coral mb-4" style={{ letterSpacing: '0.15em' }}>
+            <span className="text-[11px] font-bold uppercase tracking-[0.15em]">
+              For Waikato Students
+            </span>
+          </p>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-plum tracking-tight leading-[1.05]">
+            Find your
+            <br />
+            next thing.
+          </h1>
+          <p className="mt-5 text-base sm:text-lg text-muted font-medium max-w-lg">
+            Buy and sell secondhand items with other University of Waikato students.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
             <Link
-              to="/listings/new"
-              className="border border-slate-300 px-6 py-3 rounded-lg text-lg hover:bg-slate-50"
+              to="/browse"
+              className="rounded-full bg-plum px-6 py-3 text-surface text-base font-bold hover:bg-ink transition-colors shadow-button"
             >
-              Sell an Item
+              Browse listings →
             </Link>
-          ) : (
-            <Link
-              to="/register"
-              className="border border-slate-300 px-6 py-3 rounded-lg text-lg hover:bg-slate-50"
-            >
-              Sign Up
-            </Link>
-          ))}
-      </div>
-    </div>
+            {!loading &&
+              (user ? (
+                <Link
+                  to="/listings/new"
+                  className="rounded-full bg-card border border-mustard px-6 py-3 text-plum text-base font-semibold hover:bg-mustard/20 transition-colors"
+                >
+                  Sell an item
+                </Link>
+              ) : (
+                <Link
+                  to="/register"
+                  className="rounded-full bg-card border border-mustard px-6 py-3 text-plum text-base font-semibold hover:bg-mustard/20 transition-colors"
+                >
+                  Sign up
+                </Link>
+              ))}
+          </div>
+        </div>
+      </section>
+    </main>
   )
 }
