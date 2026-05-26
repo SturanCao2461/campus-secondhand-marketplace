@@ -1458,5 +1458,23 @@ Unit + integration tests caught #2 perfectly. E2E was the only thing that could 
 - Avatar background in MePage uses literal `text-white` (still functions identically to `text-card`). Consistency-only nit, not blocking.
 - E2E auth-flow occasionally flakes on Redis token collision (D-77 pattern); 11/11 on retry. Not a Phase D regression.
 
+### D-79 — Pagination extracted to a shared component with windowing + ellipses (2026-05-27)
 
-*Last updated: 2026-05-23 — D-77 closes the E2E coverage hole on the D-75 gate and catches a real SecurityConfig miss (`/api/auth/verify-email` never anonymous-permitted) along the way. 76 → 77 decisions logged.*
+**Decision:** Replace the inline `Previous · Page X of Y · Next` markup in BrowsePage and MyListingsPage with a shared `<Pagination />` component that renders all page-number buttons (windowed with `…` for long ranges) so users can jump to any page in one click.
+
+**Why now:** Phase D shipped a stronger card grid and the user immediately noticed how weak the Prev/Next-only pagination felt by comparison — the visual upgrade exposed the interaction gap. Small enough scope to slot in before Phase C deployment.
+
+**Approach:**
+- New `frontend/src/components/Pagination.tsx` — props: `{ page, totalPages, onPageChange }`. Pure presentational; consumers decide how to persist state (URL params for BrowsePage; local React state for MyListingsPage).
+- Windowing algorithm: `≤ 7` pages → render all; otherwise always show first, last, current ± 1, with `…` inserted at the gaps. Single helper `getPageWindow(current, total)` returns `(number | 'ellipsis')[]`.
+- Visual style picked via AskUserQuestion against three candidates (number-row vs input+Go vs inline-edit-tile). Number-row won — clearest affordance at small/medium page counts; the only failure mode is 50+ pages where the `…` skip becomes uncomfortable, but for a campus marketplace that's an acceptable upper bound.
+- Both pages net –50 lines: ~30 lines of duplicated Prev/Next markup × 2 sites → one ~75-line component (40 of which are tests). Worth the abstraction here because the *second* consumer surfaced before the first one cooled.
+
+**What surprised us — jest-dom isn't actually installed:** First test pass used `toHaveAttribute(...)` and `toBeDisabled()` (jest-dom matchers). Both failed with `Invalid Chai property`. Investigation: `@testing-library/jest-dom` is in `devDependencies` but no `vitest setup file` imports it, and `vite.config.ts` has no `setupFiles` directive. The existing test suite (46 cases) uses only vanilla Vitest matchers — `.toBeDefined()` / `.toBeNull()` / direct DOM property reads (`elem.disabled`, `elem.getAttribute(...)`). Rewrote the Pagination tests in that style; 7/7 pass. **Lesson:** the codebase convention is "no jest-dom" — assert via raw DOM properties or string match. Easy to fix later if we want richer matchers, but a separate decision and a separate cleanup pass.
+
+**Cost:** 4 files (1 new component, 1 test file, 2 page edits), 1 commit (`073d4e7`), tests 46 → 53, lint clean, format clean, no E2E impact (semantic selectors).
+
+**What we kept out:** No input-field-with-Go-button fallback. No keyboard shortcut (`Cmd+G` / arrow keys). No "items per page" selector. These are all reasonable next-steps if the page count grows past comfortable scanning, but YAGNI for a campus app.
+
+
+*Last updated: 2026-05-27 — D-78 documents the M6 Phase D visual identity refresh (Peach+Plum tokens, 5 components + 15 pages, route-1 token-first across 21 atomic commits). D-79 follows up with the Pagination component extraction and surfaces the project's vanilla-Vitest-matcher convention. 77 → 79 decisions logged.*
