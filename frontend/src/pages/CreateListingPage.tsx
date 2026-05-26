@@ -75,9 +75,13 @@ export function CreateListingPage() {
   }
 
   return (
-    <main className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Create Listing</h1>
-      {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{error}</div>}
+    <main className="max-w-2xl mx-auto px-6 py-10">
+      <h1 className="text-3xl font-bold text-plum tracking-tight mb-6">Create Listing</h1>
+      {error && (
+        <div className="rounded-card bg-error/10 border border-error/20 p-3 text-sm text-error mb-4">
+          {error}
+        </div>
+      )}
       <form
         onSubmit={handleSubmit}
         className="space-y-4"
@@ -85,16 +89,22 @@ export function CreateListingPage() {
         ref={formRef}
       >
         <div>
-          <label className="block text-sm font-medium mb-1">Title *</label>
+          <label className="block text-sm mb-1">
+            <span className="font-semibold text-plum">Title</span> *
+          </label>
           <input name="title" required maxLength={80} className={inputCls} />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Description *</label>
+          <label className="block text-sm mb-1">
+            <span className="font-semibold text-plum">Description</span> *
+          </label>
           <textarea name="description" required maxLength={2000} rows={4} className={inputCls} />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Category *</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Category</span> *
+            </label>
             <select name="categoryCode" required className={inputCls}>
               <option value="">Select...</option>
               {categories.map(c => (
@@ -105,7 +115,9 @@ export function CreateListingPage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Type *</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Type</span> *
+            </label>
             <select name="listingType" required className={inputCls}>
               <option value="SELL">Sell</option>
               <option value="GIVEAWAY">Giveaway</option>
@@ -114,18 +126,26 @@ export function CreateListingPage() {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Price</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Price</span>
+            </label>
             <input name="price" type="number" step="0.01" min="0" className={inputCls} />
-            {fieldErrors.price && <p className="text-red-600 text-xs mt-1">{fieldErrors.price}</p>}
+            {fieldErrors.price && (
+              <p className="text-xs text-error mt-1">{fieldErrors.price}</p>
+            )}
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Original Price</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Original Price</span>
+            </label>
             <input name="originalPrice" type="number" step="0.01" min="0" className={inputCls} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Condition</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Condition</span>
+            </label>
             <select name="condition" className={inputCls}>
               <option value="">Not specified</option>
               <option value="NEW">New</option>
@@ -136,35 +156,45 @@ export function CreateListingPage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Meet At</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Meet At</span>
+            </label>
             <input name="meetAt" maxLength={100} className={inputCls} />
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Reason for Selling</label>
+          <label className="block text-sm mb-1">
+            <span className="font-semibold text-plum">Reason for Selling</span>
+          </label>
           <input name="reasonForSelling" maxLength={100} className={inputCls} />
         </div>
         <div className="flex items-center gap-2">
           <input name="negotiable" type="checkbox" id="negotiable" />
-          <label htmlFor="negotiable" className="text-sm">
+          <label htmlFor="negotiable" className="text-sm text-plum">
             Price is negotiable
           </label>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Image *</label>
-          <input
-            name="image"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            required
-            className="w-full"
-          />
-          {fieldErrors.image && <p className="text-red-600 text-xs mt-1">{fieldErrors.image}</p>}
+          <label className="block text-sm mb-1">
+            <span className="font-semibold text-plum">Image</span> *
+          </label>
+          <div className="bg-mustard/30 rounded-card p-3">
+            <input
+              name="image"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              required
+              className="w-full"
+            />
+          </div>
+          {fieldErrors.image && (
+            <p className="text-xs text-error mt-1">{fieldErrors.image}</p>
+          )}
         </div>
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-md bg-blue-600 text-white py-2 hover:bg-blue-700 disabled:opacity-50"
+          className="w-full rounded-full bg-plum px-6 py-2.5 text-surface font-bold hover:bg-ink disabled:opacity-50 transition-colors shadow-button"
         >
           {submitting ? 'Creating...' : 'Create Listing'}
         </button>
@@ -174,4 +204,4 @@ export function CreateListingPage() {
 }
 
 const inputCls =
-  'w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none'
+  'mt-1 block w-full rounded-card border border-border-soft bg-card px-3 py-2 text-sm shadow-sm focus:border-coral focus:outline-none focus:ring-2 focus:ring-coral/20'

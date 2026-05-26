@@ -78,15 +78,15 @@ export function EditListingPage() {
 
   if (loading)
     return (
-      <main className="max-w-2xl mx-auto p-6">
+      <main className="max-w-2xl mx-auto px-6 py-10">
         <Spinner />
       </main>
     )
   if (!listing) return null
   if (listing.status === 'REMOVED') {
     return (
-      <main className="max-w-2xl mx-auto p-6">
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+      <main className="max-w-2xl mx-auto px-6 py-10">
+        <div className="rounded-card bg-error/10 border border-error/20 p-3 text-sm text-error">
           This listing has been removed and cannot be edited.
         </div>
       </main>
@@ -94,12 +94,18 @@ export function EditListingPage() {
   }
 
   return (
-    <main className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Edit Listing</h1>
-      {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{error}</div>}
+    <main className="max-w-2xl mx-auto px-6 py-10">
+      <h1 className="text-3xl font-bold text-plum tracking-tight mb-6">Edit Listing</h1>
+      {error && (
+        <div className="rounded-card bg-error/10 border border-error/20 p-3 text-sm text-error mb-4">
+          {error}
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Title *</label>
+          <label className="block text-sm mb-1">
+            <span className="font-semibold text-plum">Title</span> *
+          </label>
           <input
             name="title"
             required
@@ -109,7 +115,9 @@ export function EditListingPage() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Description *</label>
+          <label className="block text-sm mb-1">
+            <span className="font-semibold text-plum">Description</span> *
+          </label>
           <textarea
             name="description"
             required
@@ -121,7 +129,9 @@ export function EditListingPage() {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Category *</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Category</span> *
+            </label>
             <select
               name="categoryCode"
               required
@@ -136,7 +146,9 @@ export function EditListingPage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Type *</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Type</span> *
+            </label>
             <select
               name="listingType"
               required
@@ -150,7 +162,9 @@ export function EditListingPage() {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Price</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Price</span>
+            </label>
             <input
               name="price"
               type="number"
@@ -161,7 +175,9 @@ export function EditListingPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Original Price</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Original Price</span>
+            </label>
             <input
               name="originalPrice"
               type="number"
@@ -174,7 +190,9 @@ export function EditListingPage() {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Condition</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Condition</span>
+            </label>
             <select name="condition" defaultValue={listing.condition ?? ''} className={inputCls}>
               <option value="">Not specified</option>
               <option value="NEW">New</option>
@@ -185,7 +203,9 @@ export function EditListingPage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Meet At</label>
+            <label className="block text-sm mb-1">
+              <span className="font-semibold text-plum">Meet At</span>
+            </label>
             <input
               name="meetAt"
               maxLength={100}
@@ -195,7 +215,9 @@ export function EditListingPage() {
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Reason for Selling</label>
+          <label className="block text-sm mb-1">
+            <span className="font-semibold text-plum">Reason for Selling</span>
+          </label>
           <input
             name="reasonForSelling"
             maxLength={100}
@@ -210,26 +232,29 @@ export function EditListingPage() {
             id="negotiable"
             defaultChecked={listing.negotiable}
           />
-          <label htmlFor="negotiable" className="text-sm">
+          <label htmlFor="negotiable" className="text-sm text-plum">
             Price is negotiable
           </label>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">
-            Image (leave empty to keep current)
+          <label className="block text-sm mb-1">
+            <span className="font-semibold text-plum">Image</span>{' '}
+            <span className="text-xs text-muted">(leave empty to keep current)</span>
           </label>
-          <input
-            name="image"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="w-full"
-          />
-          <p className="text-xs text-gray-400 mt-1">Current: {listing.imageUrl}</p>
+          <div className="bg-mustard/30 rounded-card p-3">
+            <input
+              name="image"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="w-full"
+            />
+          </div>
+          <p className="text-xs text-muted mt-1">Current: {listing.imageUrl}</p>
         </div>
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-md bg-blue-600 text-white py-2 hover:bg-blue-700 disabled:opacity-50"
+          className="w-full rounded-full bg-plum px-6 py-2.5 text-surface font-bold hover:bg-ink disabled:opacity-50 transition-colors shadow-button"
         >
           {submitting ? 'Saving...' : 'Save Changes'}
         </button>
@@ -239,4 +264,4 @@ export function EditListingPage() {
 }
 
 const inputCls =
-  'w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none'
+  'mt-1 block w-full rounded-card border border-border-soft bg-card px-3 py-2 text-sm shadow-sm focus:border-coral focus:outline-none focus:ring-2 focus:ring-coral/20'
