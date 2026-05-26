@@ -52,24 +52,27 @@ export function BrowsePage() {
     setSearchParams(next)
   }
 
-  return (
-    <main className="max-w-6xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Browse Listings</h1>
+  const inputBase =
+    'rounded-full border border-border-soft bg-card px-4 py-2 text-sm font-medium shadow-sm focus:border-coral focus:outline-none focus:ring-2 focus:ring-coral/20'
 
-      <div className="flex flex-wrap gap-3 mb-6">
+  return (
+    <main className="max-w-6xl mx-auto px-6 py-10">
+      <h1 className="text-3xl font-bold text-plum tracking-tight mb-6">Browse Listings</h1>
+
+      <div className="flex flex-wrap gap-3 mb-8">
         <input
           type="text"
-          placeholder="Search by title..."
+          placeholder="Search MacBook, textbooks, lamp..."
           defaultValue={keyword}
           onKeyDown={e => {
             if (e.key === 'Enter') updateParam('keyword', (e.target as HTMLInputElement).value)
           }}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none w-48"
+          className={`${inputBase} w-56`}
         />
         <select
           value={categoryCode}
           onChange={e => updateParam('category', e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none"
+          className={inputBase}
         >
           <option value="">All Categories</option>
           {categories.map(c => (
@@ -81,7 +84,7 @@ export function BrowsePage() {
         <select
           value={listingType}
           onChange={e => updateParam('type', e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none"
+          className={inputBase}
         >
           <option value="">All Types</option>
           <option value="SELL">For Sale</option>
@@ -90,7 +93,7 @@ export function BrowsePage() {
         <select
           value={sort}
           onChange={e => updateParam('sort', e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none"
+          className={inputBase}
         >
           <option value="CREATED_DESC">Newest</option>
           <option value="CREATED_ASC">Oldest</option>
@@ -102,23 +105,30 @@ export function BrowsePage() {
       {loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-            <div key={i} className="border rounded-lg overflow-hidden animate-pulse">
-              <div className="w-full h-40 bg-gray-200" />
-              <div className="p-3 space-y-2">
-                <div className="h-4 bg-gray-200 rounded w-3/4" />
-                <div className="h-3 bg-gray-200 rounded w-1/2" />
+            <div
+              key={i}
+              className="bg-card rounded-card overflow-hidden shadow-card animate-pulse"
+            >
+              <div className="w-full h-40 bg-mustard/30" />
+              <div className="p-4 space-y-2">
+                <div className="h-4 bg-coral/20 rounded w-3/4" />
+                <div className="h-3 bg-coral/10 rounded w-1/2" />
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 mb-4">{error}</div>}
+      {error && (
+        <div className="rounded-card bg-error/10 border border-error/20 p-3 text-sm text-error mb-4">
+          {error}
+        </div>
+      )}
 
       {!loading && !error && data && data.items.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-16 text-muted">
           <svg
-            className="mx-auto h-16 w-16 text-gray-300 mb-4"
+            className="mx-auto h-16 w-16 text-coral/40 mb-4"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -130,7 +140,7 @@ export function BrowsePage() {
               d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
             />
           </svg>
-          <p className="text-lg">No listings found</p>
+          <p className="text-lg font-semibold text-plum">No listings found</p>
           <p className="text-sm mt-1">Try adjusting your search or filters</p>
         </div>
       )}
@@ -142,30 +152,32 @@ export function BrowsePage() {
               <Link
                 key={item.id}
                 to={`/listings/${item.id}/detail`}
-                className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow"
+                className="bg-card rounded-card overflow-hidden shadow-card hover:-translate-y-0.5 hover:shadow-panel transition-all"
               >
                 <img
                   src={item.imageUrl}
                   alt={item.title}
-                  className="w-full h-40 object-cover bg-gray-100"
+                  className="w-full h-40 object-cover bg-mustard/30"
                 />
-                <div className="p-3">
-                  <h3 className="font-medium text-sm truncate">{item.title}</h3>
-                  <p className="text-blue-600 font-semibold text-sm mt-1">
-                    {item.listingType === 'GIVEAWAY'
-                      ? 'Free'
-                      : item.price != null
-                        ? `$${item.price.toFixed(2)}`
-                        : ''}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">{item.category.nameEn}</p>
+                <div className="p-4">
+                  <h3 className="font-semibold text-sm text-plum truncate">{item.title}</h3>
+                  <div className="flex justify-between items-baseline mt-1">
+                    <p className="text-xl font-extrabold text-coral tracking-tight">
+                      {item.listingType === 'GIVEAWAY'
+                        ? 'Free'
+                        : item.price != null
+                          ? `$${item.price.toFixed(2)}`
+                          : ''}
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted mt-1 font-medium">{item.category.nameEn}</p>
                 </div>
               </Link>
             ))}
           </div>
 
           {data.totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-6">
+            <div className="flex justify-center gap-2 mt-8">
               <button
                 onClick={() => {
                   const p = new URLSearchParams(searchParams)
@@ -173,11 +185,11 @@ export function BrowsePage() {
                   setSearchParams(p)
                 }}
                 disabled={page === 0}
-                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30"
+                className="rounded-full border border-border-soft bg-card px-4 py-1.5 text-sm font-medium text-plum hover:bg-surface disabled:opacity-30 transition-colors"
               >
                 Previous
               </button>
-              <span className="px-3 py-1 text-sm text-gray-600">
+              <span className="px-4 py-1.5 text-sm text-muted font-medium">
                 Page {page + 1} of {data.totalPages}
               </span>
               <button
@@ -187,7 +199,7 @@ export function BrowsePage() {
                   setSearchParams(p)
                 }}
                 disabled={page >= data.totalPages - 1}
-                className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 disabled:opacity-30"
+                className="rounded-full border border-border-soft bg-card px-4 py-1.5 text-sm font-medium text-plum hover:bg-surface disabled:opacity-30 transition-colors"
               >
                 Next
               </button>
