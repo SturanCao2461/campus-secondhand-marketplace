@@ -41,7 +41,7 @@ export function ConversationsPage() {
             />
           </svg>
           <p className="text-lg font-semibold text-plum mb-2">No conversations yet</p>
-          <Link to="/browse" className="text-sm text-blue-600 hover:underline">
+          <Link to="/browse" className="text-sm text-coral hover:underline">
             Browse listings to start a conversation
           </Link>
         </div>

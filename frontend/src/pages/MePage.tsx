@@ -30,7 +30,7 @@ export function MePage() {
 
       <div className="bg-card rounded-panel shadow-card p-6">
         <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-2xl font-semibold text-white shrink-0">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-plum text-2xl font-semibold text-white shrink-0">
             {initial}
           </div>
           <div className="min-w-0 flex-1">
@@ -57,7 +57,7 @@ export function MePage() {
         </div>
 
         {!user.emailVerified && (
-          <div className="mt-4 rounded-card bg-error/10 border border-error/20 p-3 text-sm text-error">
+          <div className="mt-4 rounded-card bg-mustard/20 border border-mustard/40 p-4 text-sm text-plum">
             <p className="mb-2">
               Verify your email to post listings and message other students. Check your inbox for
               the link we sent when you signed up.
@@ -80,28 +80,28 @@ export function MePage() {
         )}
       </div>
 
-      <h2 className="mt-8 mb-3 text-sm font-medium text-slate-700">Quick actions</h2>
+      <h2 className="mt-8 mb-3 text-sm font-medium text-plum">Quick actions</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Link
           to="/listings/mine"
-          className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm hover:bg-slate-50"
+          className="rounded-lg border border-border-soft bg-card px-4 py-3 text-sm hover:bg-surface transition-colors"
         >
-          <div className="font-medium text-slate-900">My Listings</div>
-          <div className="mt-0.5 text-xs text-slate-500">Manage your items</div>
+          <div className="font-medium text-plum">My Listings</div>
+          <div className="mt-0.5 text-xs text-muted">Manage your items</div>
         </Link>
         <Link
           to="/conversations"
-          className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm hover:bg-slate-50"
+          className="rounded-lg border border-border-soft bg-card px-4 py-3 text-sm hover:bg-surface transition-colors"
         >
-          <div className="font-medium text-slate-900">Messages</div>
-          <div className="mt-0.5 text-xs text-slate-500">View conversations</div>
+          <div className="font-medium text-plum">Messages</div>
+          <div className="mt-0.5 text-xs text-muted">View conversations</div>
         </Link>
         <Link
           to="/listings/new"
-          className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm hover:bg-slate-50"
+          className="rounded-lg border border-border-soft bg-card px-4 py-3 text-sm hover:bg-surface transition-colors"
         >
-          <div className="font-medium text-slate-900">Sell an item</div>
-          <div className="mt-0.5 text-xs text-slate-500">Create a listing</div>
+          <div className="font-medium text-plum">Sell an item</div>
+          <div className="mt-0.5 text-xs text-muted">Create a listing</div>
         </Link>
       </div>
     </main>
