@@ -1,8 +1,8 @@
 export function Spinner({ label = 'Loading...' }: { label?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+    <div className="flex flex-col items-center justify-center py-12 text-muted">
       <svg
-        className="animate-spin h-8 w-8 text-blue-600 mb-3"
+        className="animate-spin h-8 w-8 text-coral mb-3"
         xmlns="http://www.w3.org/2000/svg"
         fill="none"
         viewBox="0 0 24 24"
