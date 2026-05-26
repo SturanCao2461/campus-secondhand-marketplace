@@ -1,4 +1,39 @@
 @import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@theme {
+  /* Surfaces */
+  --color-surface: #FFF4ED;
+  --color-card: #FFFFFF;
+
+  /* Brand */
+  --color-plum: #3D405B;
+  --color-ink: #2A2C40;
+  --color-coral: #E07A5F;
+  --color-sage: #81B29A;
+  --color-mustard: #F2CC8F;
+
+  /* Text */
+  --color-muted: #8B7B8E;
+
+  /* Semantic */
+  --color-error: #C44536;
+
+  /* Borders */
+  --color-border-soft: rgba(61, 64, 91, 0.1);
+
+  /* Font family */
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+
+  /* Radii */
+  --radius-card: 14px;
+  --radius-panel: 18px;
+
+  /* Shadows (plum-tinted, not neutral black) */
+  --shadow-card: 0 4px 14px rgba(61, 64, 91, 0.08);
+  --shadow-panel: 0 8px 24px rgba(61, 64, 91, 0.10);
+  --shadow-button: 0 4px 14px rgba(61, 64, 91, 0.2);
+}
 
 html,
 body,
@@ -8,10 +43,35 @@ body,
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    sans-serif;
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Decoration: radial-gradient glows for hero containers */
+.glow-coral::before {
+  content: '';
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle, rgba(224, 122, 95, 0.4) 0%, transparent 65%);
+  top: -80px;
+  right: -60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.glow-sage::after {
+  content: '';
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(129, 178, 154, 0.35) 0%, transparent 65%);
+  bottom: -60px;
+  left: -40px;
+  pointer-events: none;
+  z-index: 0;
 }
