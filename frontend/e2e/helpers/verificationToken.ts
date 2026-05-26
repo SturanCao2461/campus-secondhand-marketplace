@@ -16,15 +16,19 @@ import { execSync } from 'node:child_process'
  * docker exec helper for state that lives outside the HTTP surface.
  */
 export function getVerificationToken(): string {
-  const raw = execSync(
-    'docker exec campus_redis redis-cli --no-raw KEYS "auth:verify:*"',
-    { encoding: 'utf8' }
-  )
+  const raw = execSync('docker exec campus_redis redis-cli --no-raw KEYS "auth:verify:*"', {
+    encoding: 'utf8',
+  })
   // redis-cli formats multi-key replies as `N) "key"` — strip the array index
   // and surrounding quotes before filtering.
   const keys = raw
     .split('\n')
-    .map(l => l.trim().replace(/^\d+\)\s*/, '').replace(/^"|"$/g, ''))
+    .map(l =>
+      l
+        .trim()
+        .replace(/^\d+\)\s*/, '')
+        .replace(/^"|"$/g, '')
+    )
     .filter(l => l.startsWith('auth:verify:'))
   if (keys.length !== 1) {
     throw new Error(

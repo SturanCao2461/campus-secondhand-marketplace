@@ -130,9 +130,7 @@ export function CreateListingPage() {
               <span className="font-semibold text-plum">Price</span>
             </label>
             <input name="price" type="number" step="0.01" min="0" className={inputCls} />
-            {fieldErrors.price && (
-              <p className="text-xs text-error mt-1">{fieldErrors.price}</p>
-            )}
+            {fieldErrors.price && <p className="text-xs text-error mt-1">{fieldErrors.price}</p>}
           </div>
           <div>
             <label className="block text-sm mb-1">
@@ -187,9 +185,7 @@ export function CreateListingPage() {
               className="w-full"
             />
           </div>
-          {fieldErrors.image && (
-            <p className="text-xs text-error mt-1">{fieldErrors.image}</p>
-          )}
+          {fieldErrors.image && <p className="text-xs text-error mt-1">{fieldErrors.image}</p>}
         </div>
         <button
           type="submit"

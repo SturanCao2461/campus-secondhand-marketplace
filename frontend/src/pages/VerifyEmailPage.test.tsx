@@ -47,7 +47,11 @@ describe('VerifyEmailPage', () => {
 
   it('shows the failure card with the API error message when the token is invalid', async () => {
     vi.mocked(api.post).mockRejectedValue(
-      new ApiError(400, 'INVALID_VERIFICATION_TOKEN', 'This verification link is invalid or has expired.')
+      new ApiError(
+        400,
+        'INVALID_VERIFICATION_TOKEN',
+        'This verification link is invalid or has expired.'
+      )
     )
     renderAt('/verify-email?token=expired')
     await waitFor(() => {

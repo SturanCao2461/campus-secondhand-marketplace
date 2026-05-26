@@ -42,7 +42,13 @@ export function MePage() {
               <span className="text-sm text-muted">Member #{user.id}</span>
               {user.emailVerified ? (
                 <span className="inline-flex items-center gap-1 bg-sage/20 text-sage rounded-full px-3 py-0.5 text-xs font-bold uppercase">
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <svg
+                    className="h-3 w-3"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={3}
+                  >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                   Email verified
@@ -63,7 +69,9 @@ export function MePage() {
               the link we sent when you signed up.
             </p>
             {resendStatus === 'sent' ? (
-              <p className="rounded-card bg-sage/10 border border-sage/30 p-3 text-sm text-sage">Sent — check your inbox.</p>
+              <p className="rounded-card bg-sage/10 border border-sage/30 p-3 text-sm text-sage">
+                Sent — check your inbox.
+              </p>
             ) : (
               <button
                 onClick={handleResend}
@@ -73,9 +81,7 @@ export function MePage() {
                 {resendStatus === 'sending' ? 'Sending…' : 'Resend verification email'}
               </button>
             )}
-            {resendStatus === 'error' && (
-              <p className="mt-1 text-xs text-error">{resendError}</p>
-            )}
+            {resendStatus === 'error' && <p className="mt-1 text-xs text-error">{resendError}</p>}
           </div>
         )}
       </div>

@@ -66,7 +66,9 @@ export function ConversationsPage() {
               />
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-baseline">
-                  <span className="font-semibold text-plum truncate">{conv.counterpartNickname}</span>
+                  <span className="font-semibold text-plum truncate">
+                    {conv.counterpartNickname}
+                  </span>
                   <span className="text-xs text-muted flex-shrink-0">
                     {formatRelativeTime(conv.lastMessageAt)}
                   </span>

@@ -105,10 +105,7 @@ export function BrowsePage() {
       {loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-            <div
-              key={i}
-              className="bg-card rounded-card overflow-hidden shadow-card animate-pulse"
-            >
+            <div key={i} className="bg-card rounded-card overflow-hidden shadow-card animate-pulse">
               <div className="w-full h-40 bg-mustard/30" />
               <div className="p-4 space-y-2">
                 <div className="h-4 bg-coral/20 rounded w-3/4" />

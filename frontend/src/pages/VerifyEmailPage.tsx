@@ -69,8 +69,8 @@ export function VerifyEmailPage() {
         {errorMessage}
       </div>
       <p className="mt-4 text-sm text-muted">
-        If your link expired, log in and click <strong className="text-plum">Resend verification</strong> on your account
-        page.
+        If your link expired, log in and click{' '}
+        <strong className="text-plum">Resend verification</strong> on your account page.
       </p>
       <Link
         to="/me"

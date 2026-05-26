@@ -86,9 +86,7 @@ describe('useChatPolling', () => {
   })
 
   it('addOptimistic appends a message and advances the cursor', async () => {
-    mockedGet
-      .mockResolvedValueOnce([msg(1)])
-      .mockResolvedValueOnce([msg(11)]) // server-confirmed reply, must come AFTER optimistic id 10
+    mockedGet.mockResolvedValueOnce([msg(1)]).mockResolvedValueOnce([msg(11)]) // server-confirmed reply, must come AFTER optimistic id 10
     const { result } = renderHook(() => useChatPolling(7))
     await act(async () => {
       await Promise.resolve()

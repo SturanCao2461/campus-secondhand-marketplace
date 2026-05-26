@@ -33,7 +33,9 @@ export function MyListingsPage() {
 
   function statusBadge(s: ListingStatus) {
     return (
-      <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${STATUS_CHIP[s]}`}>
+      <span
+        className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${STATUS_CHIP[s]}`}
+      >
         {s}
       </span>
     )

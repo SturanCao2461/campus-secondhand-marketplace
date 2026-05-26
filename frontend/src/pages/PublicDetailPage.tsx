@@ -132,7 +132,10 @@ export function PublicDetailPage() {
         </button>
       )}
 
-      <Link to="/browse" className="text-coral font-semibold hover:underline text-sm mt-6 inline-block">
+      <Link
+        to="/browse"
+        className="text-coral font-semibold hover:underline text-sm mt-6 inline-block"
+      >
         &larr; Back to Browse
       </Link>
     </main>
