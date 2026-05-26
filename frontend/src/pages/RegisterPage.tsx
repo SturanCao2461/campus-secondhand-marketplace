@@ -35,13 +35,13 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-10">
-      <h1 className="text-2xl font-semibold">Create your account</h1>
-      <p className="mt-2 text-sm text-slate-600">
+    <div className="mx-auto max-w-md px-6 py-12">
+      <h1 className="text-3xl font-bold text-plum tracking-tight">Create your account</h1>
+      <p className="mt-2 text-sm text-muted">
         Use a real email — you'll need it to reset your password later.
       </p>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
+      <form onSubmit={onSubmit} className="mt-8 space-y-5">
         <Field label="Email" hint="@students.waikato.ac.nz only">
           <input
             type="email"
@@ -89,19 +89,23 @@ export function RegisterPage() {
           />
         </Field>
 
-        {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+        {error && (
+          <div className="rounded-card bg-error/10 border border-error/20 p-3 text-sm text-error">
+            {error}
+          </div>
+        )}
 
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-md bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+          className="w-full rounded-full bg-plum py-2.5 text-surface font-bold hover:bg-ink disabled:opacity-50 transition-colors shadow-button"
         >
           {submitting ? 'Creating account...' : 'Create account'}
         </button>
 
-        <p className="text-center text-sm text-slate-600">
+        <p className="text-center text-sm text-muted">
           Already have an account?{' '}
-          <Link to="/login" className="font-medium text-blue-600 hover:underline">
+          <Link to="/login" className="font-semibold text-coral hover:underline">
             Log in
           </Link>
         </p>
@@ -111,14 +115,14 @@ export function RegisterPage() {
 }
 
 const inputCls =
-  'mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-600 focus:outline-none'
+  'mt-1 block w-full rounded-card border border-border-soft bg-card px-3 py-2 text-sm shadow-sm focus:border-coral focus:outline-none focus:ring-2 focus:ring-coral/20'
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block text-sm">
-      <span className="font-medium text-slate-700">{label}</span>
+      <span className="font-semibold text-plum">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="text-xs text-muted mt-1 block">{hint}</span>}
     </label>
   )
 }
