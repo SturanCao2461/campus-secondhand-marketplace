@@ -33,7 +33,6 @@ export function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length])
 
-  // Browser notification for new messages from counterpart
   useEffect(() => {
     if (messages.length > prevCountRef.current && prevCountRef.current > 0) {
       const latest = messages[messages.length - 1]
@@ -68,7 +67,7 @@ export function ChatPage() {
 
   if (loadingConv || loadingMsgs) {
     return (
-      <main className="max-w-2xl mx-auto p-6">
+      <main className="max-w-2xl mx-auto px-6 py-10">
         <Spinner />
       </main>
     )
@@ -78,20 +77,20 @@ export function ChatPage() {
   return (
     <main className="max-w-2xl mx-auto flex flex-col h-[calc(100vh-57px)]">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b bg-white sticky top-0">
-        <Link to="/conversations" className="text-gray-500 hover:text-gray-700">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border-soft bg-card sticky top-0 z-10">
+        <Link to="/conversations" className="text-muted hover:text-plum transition-colors">
           &larr;
         </Link>
         <img
           src={conv.listingImageUrl}
           alt=""
-          className="w-10 h-10 rounded object-cover bg-gray-100"
+          className="w-10 h-10 rounded-card object-cover bg-mustard/30"
         />
         <div className="min-w-0">
-          <p className="font-medium text-sm truncate">{conv.counterpartNickname}</p>
+          <p className="font-semibold text-sm text-plum truncate">{conv.counterpartNickname}</p>
           <Link
             to={`/listings/${conv.listingId}/detail`}
-            className="text-xs text-blue-600 hover:underline truncate block"
+            className="text-xs text-coral hover:underline truncate block font-medium"
           >
             {conv.listingTitle}
           </Link>
@@ -106,18 +105,18 @@ export function ChatPage() {
           return (
             <div key={msg.id}>
               {showDate && (
-                <p className="text-center text-xs text-gray-400 my-3">
+                <p className="text-center text-xs text-muted my-3 font-medium">
                   {new Date(msg.createdAt).toLocaleDateString()}
                 </p>
               )}
               <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-[75%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap ${
-                    isOwn ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'
+                  className={`max-w-[75%] px-4 py-2 rounded-panel text-sm whitespace-pre-wrap shadow-sm ${
+                    isOwn ? 'bg-plum text-surface' : 'bg-card text-plum border border-border-soft'
                   }`}
                 >
                   {msg.content}
-                  <p className={`text-[10px] mt-1 ${isOwn ? 'text-blue-200' : 'text-gray-400'}`}>
+                  <p className={`text-[10px] mt-1 ${isOwn ? 'text-surface/70' : 'text-muted'}`}>
                     {new Date(msg.createdAt).toLocaleTimeString([], {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -132,7 +131,7 @@ export function ChatPage() {
       </div>
 
       {/* Composer */}
-      <div className="border-t bg-white px-4 py-3 flex gap-2 items-end">
+      <div className="border-t border-border-soft bg-card px-4 py-3 flex gap-2 items-end">
         <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -140,18 +139,18 @@ export function ChatPage() {
           placeholder="Type a message..."
           maxLength={1000}
           rows={1}
-          className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 resize-none border border-border-soft bg-surface rounded-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-coral/30 focus:border-coral"
         />
         <button
           onClick={handleSend}
           disabled={!input.trim() || sending}
-          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-full bg-plum px-5 py-2 text-surface text-sm font-bold hover:bg-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-button"
         >
           Send
         </button>
       </div>
       {input.length > 900 && (
-        <p className="text-xs text-gray-400 px-4 pb-1 text-right">{input.length}/1000</p>
+        <p className="text-xs text-muted px-4 pb-1 text-right">{input.length}/1000</p>
       )}
     </main>
   )
