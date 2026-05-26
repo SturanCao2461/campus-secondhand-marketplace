@@ -30,3 +30,6 @@ backend/uploads/
 
 # Maven build output (incl. JaCoCo report and binary trace)
 backend/target/
+
+# Superpowers brainstorming mockups
+.superpowers/
