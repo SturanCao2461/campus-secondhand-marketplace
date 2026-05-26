@@ -7,6 +7,7 @@ import {
   type ListingType,
 } from '../api/listings'
 import { categoriesApi, type Category } from '../api/categories'
+import { Pagination } from '../components/Pagination'
 
 export function BrowsePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -173,35 +174,15 @@ export function BrowsePage() {
             ))}
           </div>
 
-          {data.totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-8">
-              <button
-                onClick={() => {
-                  const p = new URLSearchParams(searchParams)
-                  p.set('page', String(page - 1))
-                  setSearchParams(p)
-                }}
-                disabled={page === 0}
-                className="rounded-full border border-border-soft bg-card px-4 py-1.5 text-sm font-medium text-plum hover:bg-surface disabled:opacity-30 transition-colors"
-              >
-                Previous
-              </button>
-              <span className="px-4 py-1.5 text-sm text-muted font-medium">
-                Page {page + 1} of {data.totalPages}
-              </span>
-              <button
-                onClick={() => {
-                  const p = new URLSearchParams(searchParams)
-                  p.set('page', String(page + 1))
-                  setSearchParams(p)
-                }}
-                disabled={page >= data.totalPages - 1}
-                className="rounded-full border border-border-soft bg-card px-4 py-1.5 text-sm font-medium text-plum hover:bg-surface disabled:opacity-30 transition-colors"
-              >
-                Next
-              </button>
-            </div>
-          )}
+          <Pagination
+            page={page}
+            totalPages={data.totalPages}
+            onPageChange={p => {
+              const next = new URLSearchParams(searchParams)
+              next.set('page', String(p))
+              setSearchParams(next)
+            }}
+          />
         </>
       )}
     </main>

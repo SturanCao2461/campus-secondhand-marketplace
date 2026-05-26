@@ -6,6 +6,7 @@ import {
   type ListingStatus,
   type PagedListings,
 } from '../api/listings'
+import { Pagination } from '../components/Pagination'
 
 const STATUS_CHIP: Record<ListingStatus, string> = {
   AVAILABLE: 'bg-sage text-card',
@@ -149,27 +150,7 @@ export function MyListingsPage() {
             ))}
           </div>
 
-          {data.totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-8">
-              <button
-                onClick={() => setPage(p => Math.max(0, p - 1))}
-                disabled={page === 0}
-                className="rounded-full border border-border-soft bg-card px-4 py-1.5 text-sm font-medium text-plum hover:bg-surface disabled:opacity-30 transition-colors"
-              >
-                Previous
-              </button>
-              <span className="px-4 py-1.5 text-sm text-muted font-medium">
-                Page {page + 1} of {data.totalPages}
-              </span>
-              <button
-                onClick={() => setPage(p => p + 1)}
-                disabled={page >= data.totalPages - 1}
-                className="rounded-full border border-border-soft bg-card px-4 py-1.5 text-sm font-medium text-plum hover:bg-surface disabled:opacity-30 transition-colors"
-              >
-                Next
-              </button>
-            </div>
-          )}
+          <Pagination page={page} totalPages={data.totalPages} onPageChange={setPage} />
         </>
       )}
     </main>
