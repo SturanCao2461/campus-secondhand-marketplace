@@ -1435,4 +1435,28 @@ Unit + integration tests caught #2 perfectly. E2E was the only thing that could 
 
 ---
 
+### D-78 — Visual Identity Refresh (2026-05-26)
+
+**Decision:** Migrate from "blue-600 + slate utility admin" palette to "Warm Marketplace" identity (Peach + Plum + Coral + Sage + Mustard, Plus Jakarta Sans, plum-tinted shadows, radial glow decoration) via Tailwind v4 `@theme` tokens.
+
+**Why now:** M6 Phase B (2026-05-22) closed the "polish" bucket as defined at the time, but the visual identity was still neutral-admin. With backend and feature work done, the highest remaining ROI in this thesis project is making the product look like a product the user actually wants to use.
+
+**Approach:** Route-1 token-first in 3 stages. Stage 1 introduced design tokens in `index.css` + migrated 5 shared components (Navbar/Spinner/Toast/ErrorBoundary/PasswordInput) so every page instantly inherited on-brand buttons and feedback states. Stage 2 rebuilt 4 high-impact pages (Home/Browse/PublicDetail/ListingDetail) with new typography, hero glows, and chip system. Stage 3 swept 11 remaining pages via mechanical className mapping (one mapping table applied uniformly).
+
+**What it cost:** ~22 atomic commits, zero test failures (pre-flight audit confirmed E2E and unit tests use semantic selectors, not classNames, so the migration was test-safe). No new runtime dependencies; Plus Jakarta Sans loaded via Google Fonts CDN with `display=swap` fallback.
+
+**Process notes:**
+- Subagent-driven execution (superpowers:subagent-driven-development): fresh implementer subagent per task + spec compliance reviewer + code quality reviewer. Caught a semantic miscategorization in Task 18 (an "unverified email" notice was migrated to `bg-error` tokens; should have been `bg-mustard` warning). Fix dispatched and re-verified before continuing — exactly the safety net the two-stage review is designed for.
+- Prettier auto-format pass at the end caught 11 files with format drift (including 3 unrelated pre-existing files). Committed as a single `chore(format)` commit.
+
+**What we kept out:** Logo redesign deferred (text "Campus Marketplace" stays in new font). Dark mode out. Mobile-specific layout rework out (separate phase if needed). Illustration/sticker decoration rejected during brainstorming as too dating-prone for a thesis demo.
+
+**What surprised us:** Originally feared the colour migration would shatter E2E specs. Pre-flight `grep` confirmed zero colour-class assertions in tests — the codebase had already been disciplined about semantic selectors in earlier phases. Stage 1 + 2 + 3 all ran with test suite green from the first attempt (one Stage 3 task needed a semantic fix, but tests stayed green throughout).
+
+**Known minor leftovers:**
+- Vite/Lightning CSS warns about `@import url()` ordering past the `@theme` block in compiled CSS. Cosmetic — bundle still serves the font correctly.
+- Avatar background in MePage uses literal `text-white` (still functions identically to `text-card`). Consistency-only nit, not blocking.
+- E2E auth-flow occasionally flakes on Redis token collision (D-77 pattern); 11/11 on retry. Not a Phase D regression.
+
+
 *Last updated: 2026-05-23 — D-77 closes the E2E coverage hole on the D-75 gate and catches a real SecurityConfig miss (`/api/auth/verify-email` never anonymous-permitted) along the way. 76 → 77 decisions logged.*

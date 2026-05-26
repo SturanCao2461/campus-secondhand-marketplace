@@ -65,6 +65,16 @@ Polish, testing, deployment
 - 前端单测 14 → 37（5 份新 suite：useUnsavedChangesGuard / useToast / ErrorBoundary / ProtectedRoute / useChatPolling），详见 D-71
 - ⏭️ Flyway 数据库迁移 deliberately deferred — 本地演示场景下 ROI 不足（无多人协作、无生产数据、无频繁 schema 演化）
 
+### Phase D — Visual Identity Refresh ✅ (2026-05-26)
+- Replaced "blue admin" palette with "Warm Marketplace" identity: Peach + Plum + Coral + Sage + Mustard, Plus Jakarta Sans throughout, plum-tinted shadows, soft radial glows in hero areas
+- Tailwind v4 `@theme` token block in `index.css` as single source of truth
+- 5 shared components migrated (Navbar, Spinner, Toast, ErrorBoundary, PasswordInput)
+- 4 high-impact pages rebuilt (HomePage, BrowsePage, PublicDetailPage, ListingDetailPage) — new hero, chip system, pill CTAs
+- 11 remaining pages migrated via mechanical className mapping
+- All 25 Playwright + 46 Vitest tests stayed green throughout (semantic selectors)
+- Spec: `docs/superpowers/specs/2026-05-26-milestone-6-phase-d-ui-beautification-design.md`
+- Plan: `docs/superpowers/plans/2026-05-26-ui-beautification.md`
+
 ### Phase C — Deployment ⏭️ DEFERRED
 - 跳过部署（本地演示路线）— `.env.example` / Docker compose prod / 反向代理 / VPS 全部未实施
 - E2E 也未入 CI（依赖 docker compose + backend dev server + frontend dev server，自成项目）
