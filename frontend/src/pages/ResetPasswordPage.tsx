@@ -15,13 +15,13 @@ export function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <div className="mx-auto max-w-md px-4 py-10">
-        <h1 className="text-2xl font-semibold">Invalid link</h1>
-        <p className="mt-3 text-sm text-slate-600">
+      <div className="mx-auto max-w-md px-6 py-12">
+        <h1 className="text-3xl font-bold text-plum tracking-tight">Invalid link</h1>
+        <p className="mt-3 text-sm text-muted">
           This reset link is missing a token. Request a new one.
         </p>
         <p className="mt-6 text-sm">
-          <Link to="/forgot-password" className="font-medium text-blue-600 hover:underline">
+          <Link to="/forgot-password" className="font-semibold text-coral hover:underline">
             Request a new link
           </Link>
         </p>
@@ -49,12 +49,12 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-10">
-      <h1 className="text-2xl font-semibold">Set a new password</h1>
+    <div className="mx-auto max-w-md px-6 py-12">
+      <h1 className="text-3xl font-bold text-plum tracking-tight">Set a new password</h1>
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-4">
+      <form onSubmit={onSubmit} className="mt-8 space-y-5">
         <label className="block text-sm">
-          <span className="font-medium text-slate-700">New password</span>
+          <span className="font-semibold text-plum">New password</span>
           <PasswordInput
             name="password"
             required
@@ -64,13 +64,13 @@ export function ResetPasswordPage() {
             onChange={e => setPassword(e.target.value)}
             autoComplete="new-password"
           />
-          <span className="mt-1 block text-xs text-slate-500">
+          <span className="mt-1 block text-xs text-muted">
             8–64 characters with at least one letter and one digit
           </span>
         </label>
 
         <label className="block text-sm">
-          <span className="font-medium text-slate-700">Confirm password</span>
+          <span className="font-semibold text-plum">Confirm password</span>
           <PasswordInput
             name="confirmPassword"
             required
@@ -80,12 +80,16 @@ export function ResetPasswordPage() {
           />
         </label>
 
-        {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+        {error && (
+          <div className="rounded-card bg-error/10 border border-error/20 p-3 text-sm text-error">
+            {error}
+          </div>
+        )}
 
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-md bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+          className="w-full rounded-full bg-plum py-2.5 text-surface font-bold hover:bg-ink disabled:opacity-50 transition-colors shadow-button"
         >
           {submitting ? 'Updating...' : 'Update password'}
         </button>

@@ -28,7 +28,7 @@ export function VerifyEmailPage() {
 
   if (status === 'loading') {
     return (
-      <main className="mx-auto max-w-md px-4 py-12">
+      <main className="mx-auto max-w-md px-6 py-12">
         <Spinner label="Verifying your email…" />
       </main>
     )
@@ -36,10 +36,10 @@ export function VerifyEmailPage() {
 
   if (status === 'success') {
     return (
-      <main className="mx-auto max-w-md px-4 py-12 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+      <main className="mx-auto max-w-md px-6 py-12 text-center">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sage/10">
           <svg
-            className="h-6 w-6 text-green-600"
+            className="h-6 w-6 text-sage"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -48,13 +48,13 @@ export function VerifyEmailPage() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h1 className="text-2xl font-semibold text-slate-900">Email verified</h1>
-        <p className="mt-2 text-sm text-slate-500">
+        <h1 className="text-3xl font-bold text-plum tracking-tight">Email verified</h1>
+        <p className="mt-2 text-sm text-muted">
           Thanks. You can now post listings and message other students.
         </p>
         <Link
           to="/"
-          className="mt-6 inline-block rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+          className="mt-6 inline-block rounded-full bg-plum px-6 py-2.5 text-sm text-surface font-bold hover:bg-ink transition-colors shadow-button"
         >
           Continue to home
         </Link>
@@ -63,16 +63,18 @@ export function VerifyEmailPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md px-4 py-12 text-center">
-      <h1 className="text-2xl font-semibold text-slate-900">Verification failed</h1>
-      <div className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{errorMessage}</div>
-      <p className="mt-4 text-sm text-slate-500">
-        If your link expired, log in and click <strong>Resend verification</strong> on your account
+    <main className="mx-auto max-w-md px-6 py-12 text-center">
+      <h1 className="text-3xl font-bold text-plum tracking-tight">Verification failed</h1>
+      <div className="mt-3 rounded-card bg-error/10 border border-error/20 p-3 text-sm text-error">
+        {errorMessage}
+      </div>
+      <p className="mt-4 text-sm text-muted">
+        If your link expired, log in and click <strong className="text-plum">Resend verification</strong> on your account
         page.
       </p>
       <Link
         to="/me"
-        className="mt-6 inline-block rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+        className="mt-6 inline-block rounded-full border border-border-soft px-6 py-2.5 text-sm text-muted hover:text-coral transition-colors"
       >
         Go to your account
       </Link>
